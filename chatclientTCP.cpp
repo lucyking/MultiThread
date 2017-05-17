@@ -61,6 +61,7 @@ void *manage_reading(void *) {
             printf("[>>>]\n%s\n", inbuf);
         }
     }
+    return NULL;
 }
 
 int main(int argc, char **argv) {

@@ -37,10 +37,12 @@
 #include <set>
 #include <string>
 #include <map>
+#include <vector>
 
 #define MAXTHREADS 3
 #define KILO 1024
 #define BUFF_LENGTH 1000
+#define STRLEN 256
 #define PROTO_PORT 60000
 #define QLEN 1
 
@@ -60,42 +62,56 @@ struct sysinfo sys_info;
 char uptimeInfo[15];
 unsigned long uptime;
 
+typedef map<int, pthread_t> serverTid;
+serverTid sTid;
+
 typedef set<string> setOnlineClient;
 setOnlineClient sli;
 
-typedef map<int, pair<unsigned long,string>> registerInfo;
+typedef map<int, pair<unsigned long, string>> registerInfo;
 
 typedef struct contact {
-    char usrname[256];
-    char contactname[256];
-    int contactsd=0;
+    int id = 0;
+    char usrname[STRLEN];
+    char inMsg[STRLEN];
+    char contactname[STRLEN];
+    int contactsd = 0;
     registerInfo regInfo;
-    int id=0;
-    int money=0;
+    int money = 0;
     pthread_mutex_t mlock = PTHREAD_MUTEX_INITIALIZER;
 } contact;
 
 contact onlinecontacts[MAX_CONTACTS];
 
-typedef map <int,contact> clientMap;
+typedef map<int, contact> clientMap;
 clientMap clientDict;
 
-void serviceBorrow(int sd2,char* msg){
-    int n,msgMoney;
+void *serviceBorrow(void *c) {
+    contact usr = *(contact *)c;
+    int n, msgMoney;
     int served = 0;
     char outbuf[BUFF_LENGTH];
-    while(served == 0){
-        bzero(outbuf,BUFF_LENGTH);
-        if(!strstr(msg,"borrow")){
-            sscanf(msg,"%*s %d",&msgMoney);
-            if(msgMoney<0 || msgMoney>UINTMAX_MAX){
-                sprintf(outbuf,"%s","Invalid Money quantity\nPlease input valid one:\n");
-                write(sd2,outbuf,sizeof(outbuf));
+    char msg[STRLEN],tmp[STRLEN];
+    strcpy(msg,usr.inMsg);
+    while (served == 0) {
+        bzero(outbuf, BUFF_LENGTH);
+        if (strstr(msg, "borrow")) {
+            sscanf(msg, "%*s%s %d",tmp,&msgMoney);
+            printf("[serviceBorrow()]>>> money:%d\n",msgMoney);
+            if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
+                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
+            } else{
+                sprintf(outbuf,"Borrow from bank: %d?",msgMoney);
             }
-        }else if(!strstr(msg,"store")){
-
+            write(usr.contactsd, outbuf, sizeof(outbuf));
+        } else if (strstr(msg, "store")) {
+            printf("In store ser");
+        }
+        else{
+            served = 1;
         }
     }
+    return 0;
 }
 
 
@@ -124,6 +140,7 @@ void chat(int sd2) {
             write(sd2, outbuf, sizeof(outbuf));
             served = 1;
         } else {
+            strcpy(clientDict[sd2].inMsg,inbuf);
             //get clientSeq #ID
             if (!strncmp(inbuf, "#reg", 4)) {
                 /*
@@ -138,6 +155,14 @@ void chat(int sd2) {
                 clientDict[sd2].id = clientSeq++;
                 sprintf(outbuf, "Hi <%s>, your #ID is [%d]", clientDict[sd2].usrname, clientDict[sd2].id);
                 write(sd2, outbuf, sizeof(outbuf));
+
+
+                if (pthread_create(&sTid[clientDict[sd2].id], NULL, serviceBorrow,&clientDict[sd2]) != 0) {
+                    perror("Thread creation");
+                    tid[i] = (pthread_t) -1; // to be sure we don't have unknown values... cast
+                    continue;
+                }
+
             } else if (!strcmp(inbuf, "p")) {
                 /*
                 sprintf(outbuf, "[%ld client%c online!]:", sli.size(), sli.size() > 1 ? 's' : ' ');
@@ -147,20 +172,21 @@ void chat(int sd2) {
                 }
                 */
                 sprintf(outbuf, "[%ld client%c online!]:", clientDict.size(), clientDict.size() > 1 ? 's' : ' ');
-                for(auto it = clientDict.begin();it!=clientDict.end();it++){
-                    sprintf(outbuf, "%s %s", outbuf,it->second.usrname);
+                for (auto it = clientDict.begin(); it != clientDict.end(); it++) {
+                    sprintf(outbuf, "%s %s", outbuf, it->second.usrname);
                 }
                 sprintf(outbuf, "%s%s", outbuf, "\n");
                 write(sd2, outbuf, sizeof(outbuf));
-            } else if (!strcmp(inbuf,"l")) {
+            } else if (!strcmp(inbuf, "l")) {
                 /** print client Queue Info **/
-                sprintf(outbuf,"%s\n","<ID>\t<Reg Time>\t<User>");
+                sprintf(outbuf, "%s\n", "<ID>\t<Reg Time>\t<User>");
                 registerInfo tmp;// = clientDict[sd2].regInfo;
                 registerInfo sum;
-                for(auto it = clientDict.begin();it!=clientDict.end();it++)
+                for (auto it = clientDict.begin(); it != clientDict.end(); it++)
                     sum.insert(it->second.regInfo.begin(), it->second.regInfo.end());
-                for(auto it = sum.begin();it!=sum.end();it++)
-                    sprintf(outbuf, "%s% 2d\t% 4ld\t\t% 2s\n", outbuf, it->first, it->second.first,it->second.second.c_str());
+                for (auto it = sum.begin(); it != sum.end(); it++)
+                    sprintf(outbuf, "%s% 2d\t% 4ld\t\t% 2s\n", outbuf, it->first, it->second.first,
+                            it->second.second.c_str());
                 /*
                 for(auto it = clientDict.begin();it!=clientDict.end();it++) {
                     tmp = it->second.regInfo;
@@ -252,14 +278,14 @@ void *manage_connection(void *sdp) {
     //printf("\ndentro thread contacts [%d]\n\n", contacts);
 
 //    for (i = 0; i < contacts; i++) {
-    for (auto k = clientDict.begin() ; k != clientDict.end(); k++) {
+    for (auto k = clientDict.begin(); k != clientDict.end(); k++) {
 
         //	printf(" dentro for thread%s - %d\n\n", onlinecontacts[i].contactname, onlinecontacts[i].contactsd);
 
 //        sprintf(outbuf, "[%d]: [%s]\n", i, onlinecontacts[i].contactname);
         registerInfo tmp = k->second.regInfo;
-        for(auto m = tmp.begin();m!=tmp.end();m++){
-            sprintf(outbuf, "[%d]: [%s]: [%ld]", m->first,m->second.second.c_str(),m->second.first);
+        for (auto m = tmp.begin(); m != tmp.end(); m++) {
+            sprintf(outbuf, "[%d]: [%s]: [%ld]", m->first, m->second.second.c_str(), m->second.first);
         }
         //printf("[%s]\n\n", buffer);
         write(sd2, outbuf, sizeof(outbuf));
@@ -275,7 +301,7 @@ void *manage_connection(void *sdp) {
 
     chat(sd2);
 
-    tid[j] = (pthread_t) -1; //è un cast...	/* free thread array entry */
+    tid[j] = (pthread_t) -1; // free thread array entry
 
     printf("-(IN THREAD)- close sd2\n");
     for (i = 0; onlinecontacts[i].contactsd != sd2; i++); // find sd2's name
@@ -307,8 +333,10 @@ int main(int argc, char **argv) {
     char busymsg[] = "BUSY";
     char buffer[BUFF_LENGTH];
 
+    // init thread_t status
     for (i = 0; i < MAXTHREADS; i++) {
         tid[i] = (pthread_t) -1;
+//        sTid[i] = (pthread_t) -1;
         active_socket[i] = -1;
     }
 
