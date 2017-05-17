@@ -104,6 +104,7 @@ void *serviceBorrow(void *c) {
                 sprintf(outbuf,"Borrow from bank: %d?",msgMoney);
             }
             write(usr.contactsd, outbuf, sizeof(outbuf));
+            pthread_exit(0);
         } else if (strstr(msg, "store")) {
             printf("In store ser");
         }
