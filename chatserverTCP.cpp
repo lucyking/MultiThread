@@ -1,24 +1,3 @@
-/*
- * chatserverTCP.c
- *
- *  Created on: Feb 2013
- *      Author: Matteo Ruggero Ronchi
- *
- *  Copyright 2013 Matteo Ruggero Ronchi
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +17,8 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <iostream>
+#include <queue>
 
 #define MAXTHREADS 3
 #define KILO 1024
@@ -49,26 +30,31 @@
 #define MAX_CONTACTS 3
 
 using namespace std;
-
+int BankMoney = UINTMAX_MAX;
 int clientSeq = 1;
 int contacts = 0;
-pthread_t tid[MAXTHREADS];
 int active_socket[MAXTHREADS];
 int thread_retval = 0;
 int sd;
 int endloop;
 
 struct sysinfo sys_info;
+
+
 char uptimeInfo[15];
 unsigned long uptime;
 
 typedef map<int, pthread_t> serverTid;
-serverTid sTid;
+serverTid sTid,distTid;
+pthread_t tid[MAXTHREADS];
+pthread_mutex_t readClinetLock = PTHREAD_MUTEX_INITIALIZER;
+int t_mutex;
 
 typedef set<string> setOnlineClient;
 setOnlineClient sli;
 
-typedef map<int, pair<unsigned long, string>> registerInfo;
+typedef map<int, pair<unsigned long, string>> registerInfo; //< ID, <register_time, name>>
+
 
 typedef struct contact {
     int id = 0;
@@ -86,33 +72,114 @@ contact onlinecontacts[MAX_CONTACTS];
 typedef map<int, contact> clientMap;
 clientMap clientDict;
 
+
+typedef  deque<contact> serverList;
+serverList borrowClientDeque,storeClientDeque;
+
+unsigned long checkDeque(serverList cliList);
+
+int getListHeadID(serverList cliList){
+    return cliList.front().id;
+}
+
 void *serviceBorrow(void *c) {
     contact usr = *(contact *)c;
     int n, msgMoney;
     int served = 0;
-    char outbuf[BUFF_LENGTH];
+    char inbuf[BUFF_LENGTH],outbuf[BUFF_LENGTH];
     char msg[STRLEN],tmp[STRLEN];
     strcpy(msg,usr.inMsg);
+
+//    pthread_mutex_lock(&readClinetLock);
     while (served == 0) {
         bzero(outbuf, BUFF_LENGTH);
-        if (strstr(msg, "borrow")) {
+        bzero(inbuf,BUFF_LENGTH);
+        if (strstr(msg, "borrow")){
             sscanf(msg, "%*s%s %d",tmp,&msgMoney);
             printf("[serviceBorrow()]>>> money:%d\n",msgMoney);
             if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
                 sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
             } else{
-                sprintf(outbuf,"Borrow from bank: %d?",msgMoney);
+                sprintf(outbuf,"Borrow from bank: %d?[y/n]\n",msgMoney);
+                write(usr.contactsd, outbuf, sizeof(outbuf));
+//                if(!pthread_mutex_trylock(&readClinetLock))
+//                    perror("serviceBorrow mutex LOCK failed!");
+                n = read(usr.contactsd, inbuf, sizeof(inbuf));
+//                if(!pthread_mutex_unlock(&readClinetLock))
+//                    perror("serviceBorrow mutex UNLOCK failed!");
+
+                printf("read>>>%d %s\n:",n,inbuf);
+//                if(!strncmp(inbuf,"y",1)){
+                if(strstr(inbuf,"y")){
+                    BankMoney=BankMoney-msgMoney;
+                    usr.money=usr.money+msgMoney;
+                    bzero(outbuf,BUFF_LENGTH);
+                    sprintf(outbuf,"Borrow success!\nNow your account sum: %d, See you :-)\n",usr.money);
+                } else if(!strcmp(inbuf,"n")){
+                    sprintf(outbuf,"There,May you can come next time,Bye.");
+                }
+                served=1;
+                printf("[>>>]Borrow Done.\n");
             }
-            write(usr.contactsd, outbuf, sizeof(outbuf));
-            pthread_exit(0);
         } else if (strstr(msg, "store")) {
-            printf("In store ser");
+            sprintf(outbuf,"In store ser");
+            served=1;
+            printf("\n\n>>>>>>>>>>>>STORE\n\n");
         }
         else{
+            sprintf(outbuf,"Invalid Input,EXIT :(");
             served = 1;
         }
     }
-    return 0;
+    printf("[>>>]SERVED==1 serviceBorrow() exit.\n\n");
+//    borrowClientList.pop_back()
+    borrowClientDeque.pop_front(); // Serve done: pop the front Client in Queue.
+    write(usr.contactsd, outbuf, sizeof(outbuf));
+//    pthread_mutex_unlock(&readClinetLock);
+    pthread_exit(0);
+    return (void *)NULL;
+}
+
+void *distServer(void *p) {
+    printf("[>>>]Here is *distServer(void *p)\n");
+    contact usr = *(contact *) p;
+    int curServerID;
+    char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
+    char msg[STRLEN], tmp[STRLEN];
+    strcpy(msg, usr.inMsg);
+
+    int waitTime = INT32_MAX;
+
+//    int done = 0;
+
+
+    while(true) {
+        if (!strstr(inbuf, "borrow")) {
+            borrowClientDeque.push_back(usr);
+            checkDeque(borrowClientDeque);
+//        waitTime = checkList(borrowClientList);
+            curServerID = getListHeadID(borrowClientDeque);
+            if (curServerID == usr.id) {
+                if (0 != pthread_create(&distTid[usr.id], NULL, serviceBorrow, &usr)) {
+                    perror("Thread:<serviceBorrow> creation Failed!");
+                    distTid[usr.id] = (pthread_t) -1; // to be sure we don't have unknown values... cast
+                }
+                pthread_join(distTid[usr.id], 0);
+                break;
+            }
+        } else if (!strstr(inbuf, "store")) {
+            storeClientDeque.push_back(usr);
+        }else {
+            sprintf(outbuf,"%s\n","Wait previous client finish");
+            printf("[>>>]Wait previous client finish");
+            write(usr.contactsd,outbuf,sizeof(outbuf));
+            sleep(1);
+            continue;
+        }
+
+    }
+
+
 }
 
 
@@ -132,8 +199,14 @@ void chat(int sd2) {
             inbuf[i] = 0;
             outbuf[i] = 0;
         }
-
+        /*
+        if(!pthread_mutex_unlock(&readClinetLock)){
+            perror("service_CHAT mutex UNLOCK failed!");
+        }
+        */
         n = read(sd2, inbuf, sizeof(inbuf));
+//        pthread_mutex_lock(&readClinetLock);
+//        cout<<"read inbuf size: "<<n<<endl;
 
         if (!strcmp(inbuf, "q")) {
             sprintf(outbuf, "q");
@@ -143,7 +216,11 @@ void chat(int sd2) {
         } else {
             strcpy(clientDict[sd2].inMsg,inbuf);
             //get clientSeq #ID
-            if (!strncmp(inbuf, "#reg", 4)) {
+            if(!strcmp(inbuf,"y")){
+                sprintf(outbuf, "In CHAT thread you input: y\n");
+                write(sd2, outbuf, sizeof(outbuf));
+            }
+            else if (!strncmp(inbuf, "#reg", 4)) {
                 /*
                 for (i = 0; onlinecontacts[i].contactsd != sd2; i++);
                 sprintf(outbuf, "Hi <%s>, your #ID is [%d]", onlinecontacts[i].contactname, clientSeq);
@@ -158,10 +235,15 @@ void chat(int sd2) {
                 write(sd2, outbuf, sizeof(outbuf));
 
 
-                if (pthread_create(&sTid[clientDict[sd2].id], NULL, serviceBorrow,&clientDict[sd2]) != 0) {
-                    perror("Thread creation");
-                    tid[i] = (pthread_t) -1; // to be sure we don't have unknown values... cast
-                    continue;
+                if(strstr(inbuf," borrow ") || strstr(inbuf," store")) {
+//                    pthread_mutex_unlock(&readClinetLock);
+//                    if (pthread_create(&sTid[clientDict[sd2].id], NULL, serviceBorrow, &clientDict[sd2]) != 0) {
+                    if (pthread_create(&sTid[clientDict[sd2].id], NULL, distServer, &clientDict[sd2]) != 0) {
+                        perror("Thread creation Failed!");
+                        sTid[clientDict[sd2].id]= (pthread_t) -1; // to be sure we don't have unknown values... cast
+                        continue;
+                    }
+                    pthread_join(sTid[clientDict[sd2].id],0);
                 }
 
             } else if (!strcmp(inbuf, "p")) {
@@ -186,7 +268,7 @@ void chat(int sd2) {
                 for (auto it = clientDict.begin(); it != clientDict.end(); it++)
                     sum.insert(it->second.regInfo.begin(), it->second.regInfo.end());
                 for (auto it = sum.begin(); it != sum.end(); it++)
-                    sprintf(outbuf, "%s% 2d\t% 4ld\t\t% 2s\n", outbuf, it->first, it->second.first,
+                    sprintf(outbuf, "%s% 2d\t% 7ld\t\t% 3s\n", outbuf, it->first, it->second.first,
                             it->second.second.c_str());
                 /*
                 for(auto it = clientDict.begin();it!=clientDict.end();it++) {
@@ -463,4 +545,17 @@ int main(int argc, char **argv) {
 
     }
     printf("Server finished\n");
+}
+
+unsigned long checkDeque(serverList cliList) {
+    contact usr;
+    unsigned long t=0;
+    cout<<"-------checkDeque---------"<<endl;
+    cout<<"[Check List>>>]"<<endl;
+    for(auto it = cliList.begin();it!=cliList.end();it++){
+        printf("%s %s %ld\n", it->regInfo[it->id].second.c_str(), it->usrname, it->regInfo[it->id].first);
+        t = t+it->regInfo[it->id].first;
+    }
+    cout<<"*******checkDeque*********"<<endl;
+    return t;
 }

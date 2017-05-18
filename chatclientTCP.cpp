@@ -150,7 +150,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        printf("\t\t- <[contactname]:[message] to send a private message>\n\t\t- <[message] to send a public message>\n\t\t- <[q] to exit>\n\n"); //controlla nuovi arrivi utenti
+        printf("\t\t- <[contactname]:[message] to send a private message>\n\t\t- <[message] to send a public message>\n\t\t- <[q] to exit>\n\n\n"); //controlla nuovi arrivi utenti
 
         if (pthread_create(&tid, NULL, manage_reading,NULL) != 0) {
             perror("Thread creation");
