@@ -78,6 +78,7 @@ typedef  deque<contact> serverList;
 serverList borrowClientDeque,storeClientDeque;
 
 unsigned long checkDeque(serverList cliList);
+bool inDeque(serverList cliList, contact c);
 
 int getListHeadID(serverList cliList){
     return cliList.front().id;
@@ -156,9 +157,12 @@ void *distServer(void *p) {
     int done = 0;
 
 
-    while(!done) {
+    while (!done) {
         if (strstr(inbuf, "borrow")) {
-            borrowClientDeque.push_back(usr);
+
+            //only push each #ID once time
+            if (!inDeque(borrowClientDeque, usr))
+                borrowClientDeque.push_back(usr);
 
             checkDeque(borrowClientDeque);
 
@@ -573,11 +577,19 @@ unsigned long checkDeque(serverList cliList) {
     contact usr;
     unsigned long t=0;
     cout<<"-------checkDeque---------"<<endl;
-    cout<<"[Check List>>>]"<<endl;
     for(auto it = cliList.begin();it!=cliList.end();it++){
         printf("%d %s %ld\n", it->id, it->usrname, it->regInfo[it->id].first);
         t = t+it->regInfo[it->id].first;
     }
     cout<<"*******checkDeque*********"<<endl;
     return t;
+}
+
+
+bool inDeque(serverList cliList, contact c){
+    for(auto it = cliList.begin();it!=cliList.end();it++){
+        if(it->id==c.id)
+            return true;
+    }
+    return false;
 }
