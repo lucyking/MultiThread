@@ -1,3 +1,4 @@
+#! /bin/bash
 CFLAG= -std=c++14 -W -Wall
 
 all:server client
@@ -13,6 +14,7 @@ client:chatclientTCP.o
 
 chatclientTCP.o:chatclientTCP.cpp
 	g++ ${CFLAG} -c chatclientTCP.cpp 
+	ls -lat
 
 clean:
 	rm -rf *o server.* client.*

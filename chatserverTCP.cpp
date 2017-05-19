@@ -4,13 +4,14 @@
 #include <signal.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <time.h>
+#include <sys/time.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/sysinfo.h>
 #include <arpa/inet.h>
-#include <pthread.h>
 #include <unistd.h>
 
 #include <set>
@@ -26,6 +27,7 @@
 #define STRLEN 256
 #define PROTO_PORT 60000
 #define QLEN 1
+#define SERVERTIME 180 //in seconds
 
 #define MAX_CONTACTS 3
 
@@ -39,6 +41,8 @@ int sd;
 int endloop;
 
 struct sysinfo sys_info;
+struct timezone g_tz;
+struct tm *Time;
 
 
 char uptimeInfo[15];
@@ -49,6 +53,7 @@ serverTid sTid,distTid;
 pthread_t tid[MAXTHREADS];
 pthread_mutex_t readClinetLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t queueLock= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t initUserLock= PTHREAD_MUTEX_INITIALIZER;
 int t_mutex;
 
 typedef set<string> setOnlineClient;
@@ -58,7 +63,7 @@ typedef map<int, pair<unsigned long, string>> registerInfo; //< ID, <register_ti
 
 
 typedef struct contact {
-    int id = 0;
+    int id;
     char usrname[STRLEN];
     char inMsg[STRLEN];
     char contactname[STRLEN];
@@ -66,6 +71,9 @@ typedef struct contact {
     registerInfo regInfo;
     int money = 0;
     pthread_mutex_t mlock = PTHREAD_MUTEX_INITIALIZER;
+    struct timeval regTv;
+    struct timeval startTv;
+    int time = SERVERTIME;
 } contact;
 
 contact onlinecontacts[MAX_CONTACTS];
@@ -78,11 +86,18 @@ typedef  deque<contact> serverList;
 serverList borrowClientDeque,storeClientDeque;
 
 unsigned long checkDeque(serverList cliList);
-bool inDeque(serverList cliList, contact c);
+bool inDeque(serverList cliList, contact usr);
+
+bool startTick(serverList &deque, contact contact);
 
 int getListHeadID(serverList cliList){
     return cliList.front().id;
 }
+
+void prGreen();
+void prNormal();
+
+void sysDeamon();
 
 void *serviceBorrow(void *c) {
 
@@ -94,6 +109,13 @@ void *serviceBorrow(void *c) {
     char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
     strcpy(msg, usr.inMsg);
+
+    // start usr time tick
+    if(!startTick(borrowClientDeque,usr)){
+       perror("[>>>ERR]:StartTick() Failed\n");
+    }
+//    gettimeofday(&(usr.startTv),&g_tz);
+//    checkDeque(borrowClientDeque);
 
     while (served == 0) {
         bzero(outbuf, BUFF_LENGTH);
@@ -233,9 +255,8 @@ void chat(int sd2) {
         } else {
             strcpy(clientDict[sd2].inMsg,inbuf);
             //get clientSeq #ID
-            if(!strcmp(inbuf,"y")){
-                sprintf(outbuf, "In CHAT thread you input: y\n");
-                write(sd2, outbuf, sizeof(outbuf));
+            if(!strncmp(inbuf,"monitor",7)){
+                sysDeamon();
             }
             else if(strstr(inbuf,"checkBdq")){
                 checkDeque(borrowClientDeque);
@@ -534,6 +555,8 @@ int main(int argc, char **argv) {
             newcontact.contactsd = sd2;  //<-- init client parameter
             newcontact.money = 600;
 //			newcontact.id=-1;
+//            gettimeofday(&tv, &tz);
+            gettimeofday(&newcontact.regTv, &g_tz); // init contact 's register time
             onlinecontacts[contacts] = newcontact;
             clientDict[sd2] = newcontact;
 
@@ -574,22 +597,71 @@ int main(int argc, char **argv) {
 }
 
 unsigned long checkDeque(serverList cliList) {
-    contact usr;
+//    contact usr;
     unsigned long t=0;
+    int firstFlag = 1;
+    struct tm *p;
     cout<<"-------checkDeque---------"<<endl;
     for(auto it = cliList.begin();it!=cliList.end();it++){
-        printf("%d %s %ld\n", it->id, it->usrname, it->regInfo[it->id].first);
+//        p = localtime(&(it->startTv.tv_sec));
+
+        if(firstFlag==1)  // only render the 1st line, which is in servering
+            prGreen();
+
+        p = localtime(&it->startTv.tv_sec);
+        printf("%d/%d/%d %d:%d:%d.%ld  ",
+               1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
+               p->tm_hour, p->tm_min, p->tm_sec, it->startTv.tv_usec);
+        printf(" %d %s %ld\n", it->id, it->usrname, it->regInfo[it->id].first);
         t = t+it->regInfo[it->id].first;
+
+        if(firstFlag==1) {
+            firstFlag = 0;
+            prNormal();
+        }
     }
     cout<<"*******checkDeque*********"<<endl;
     return t;
 }
 
 
-bool inDeque(serverList cliList, contact c){
+bool inDeque(serverList cliList, contact usr){
     for(auto it = cliList.begin();it!=cliList.end();it++){
-        if(it->id==c.id)
+        if(it->id==usr.id)
             return true;
     }
     return false;
+}
+
+bool startTick(serverList &deque, contact usr){
+    for(auto it = deque.begin();it!=deque.end();it++){
+       if(it->id==usr.id) {
+           cout<<"[in startTick before>>]"<<endl;
+           checkDeque(deque);
+           gettimeofday(&it->startTv, &g_tz);
+           cout<<"[in startTick end>>]"<<endl;
+           checkDeque(deque);
+           return true;
+       }
+    }
+    return false;
+
+}
+
+
+
+void sysDeamon(){
+    while(true) {
+        printf("\033[00H");
+        printf("-----------------Borrow List-----------------\n");
+        checkDeque(borrowClientDeque);
+    }
+}
+
+void prGreen(){
+    printf("\033[32;22m");
+}
+
+void prNormal(){
+    printf("\033[0m");
 }
