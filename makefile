@@ -1,7 +1,6 @@
 CFLAG= -std=c++14 -W -Wall
 
 all:server client
-	make clean
 
 server:chatserverTCP.o
 	g++  --std=c++14 chatserverTCP.o -lpthread -o server

@@ -149,7 +149,7 @@ void *distServer(void *p) {
     int curServerID;
     char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
-    strcpy(msg, usr.inMsg);
+    strcpy(inbuf, usr.inMsg);
 
     int waitTime = INT32_MAX;
 
@@ -157,7 +157,7 @@ void *distServer(void *p) {
 
 
     while(!done) {
-        if (!strstr(inbuf, "borrow")) {
+        if (strstr(inbuf, "borrow")) {
             borrowClientDeque.push_back(usr);
 
             checkDeque(borrowClientDeque);
@@ -187,7 +187,7 @@ void *distServer(void *p) {
                 continue;
             }
 
-        } else if (!strstr(inbuf, "store")) {
+        } else if (strstr(inbuf, "store")) {
             storeClientDeque.push_back(usr);
         }
     }
@@ -232,6 +232,9 @@ void chat(int sd2) {
             if(!strcmp(inbuf,"y")){
                 sprintf(outbuf, "In CHAT thread you input: y\n");
                 write(sd2, outbuf, sizeof(outbuf));
+            }
+            else if(strstr(inbuf,"checkBdq")){
+                checkDeque(borrowClientDeque);
             }
             else if (!strncmp(inbuf, "#reg", 4)) {
                 /*
@@ -335,15 +338,19 @@ void chat(int sd2) {
                 write(onlinecontacts[i].contactsd, outbuf, sizeof(outbuf));
 
             } else {
+                sprintf(outbuf, "In BANK thread you input>>> %s\n",inbuf);
+                write(sd2, outbuf, sizeof(outbuf));
+                /*
                 for (i = 0; onlinecontacts[i].contactsd != sd2; i++);
                 sprintf(message, "<%s> wrote: [%s]", onlinecontacts[i].usrname, inbuf);
                 strcpy(outbuf, message);
                 for (i = 0; i < contacts; i++) {
                     if (onlinecontacts[i].contactsd != sd2)
                         write(onlinecontacts[i].contactsd, outbuf, sizeof(outbuf));
-
                 }
+                */
             }
+
 
         }
     }
