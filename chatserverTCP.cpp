@@ -172,17 +172,24 @@ void *distServer(void *p) {
                 }
                 pthread_join(distTid[usr.id], 0);
                 done = 1;
+            }else {
+                sprintf(outbuf,"%s","Wait previous client finish\n");
+                printf("[>>>]Wait previous client finish - -");
+                write(usr.contactsd,outbuf,sizeof(outbuf));
+
+                pthread_mutex_lock(&queueLock);
+
+                sprintf(outbuf,"%s","You time\n");
+                printf("[>>>]Wait previous client finish - -");
+                write(usr.contactsd,outbuf,sizeof(outbuf));
+
+                pthread_mutex_unlock(&queueLock);
+                continue;
             }
+
         } else if (!strstr(inbuf, "store")) {
             storeClientDeque.push_back(usr);
-        }else {
-            sprintf(outbuf,"%s\n","Wait previous client finish");
-            printf("[>>>]Wait previous client finish");
-            write(usr.contactsd,outbuf,sizeof(outbuf));
-            sleep(1);
-            continue;
         }
-
     }
 
 
