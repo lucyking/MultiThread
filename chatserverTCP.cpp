@@ -48,6 +48,7 @@ typedef map<int, pthread_t> serverTid;
 serverTid sTid,distTid;
 pthread_t tid[MAXTHREADS];
 pthread_mutex_t readClinetLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queueLock= PTHREAD_MUTEX_INITIALIZER;
 int t_mutex;
 
 typedef set<string> setOnlineClient;
@@ -83,24 +84,26 @@ int getListHeadID(serverList cliList){
 }
 
 void *serviceBorrow(void *c) {
-    contact usr = *(contact *)c;
+
+    pthread_mutex_lock(&queueLock);
+
+    contact usr = *(contact *) c;
     int n, msgMoney;
     int served = 0;
-    char inbuf[BUFF_LENGTH],outbuf[BUFF_LENGTH];
-    char msg[STRLEN],tmp[STRLEN];
-    strcpy(msg,usr.inMsg);
+    char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
+    char msg[STRLEN], tmp[STRLEN];
+    strcpy(msg, usr.inMsg);
 
-//    pthread_mutex_lock(&readClinetLock);
     while (served == 0) {
         bzero(outbuf, BUFF_LENGTH);
-        bzero(inbuf,BUFF_LENGTH);
-        if (strstr(msg, "borrow")){
-            sscanf(msg, "%*s%s %d",tmp,&msgMoney);
-            printf("[serviceBorrow()]>>> money:%d\n",msgMoney);
+        bzero(inbuf, BUFF_LENGTH);
+        if (strstr(msg, "borrow")) {
+            sscanf(msg, "%*s%s %d", tmp, &msgMoney);
+            printf("[serviceBorrow()]>>> money:%d\n", msgMoney);
             if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
                 sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
-            } else{
-                sprintf(outbuf,"Borrow from bank: %d?[y/n]\n",msgMoney);
+            } else {
+                sprintf(outbuf, "Borrow from bank: %d?[y/n]\n", msgMoney);
                 write(usr.contactsd, outbuf, sizeof(outbuf));
 //                if(!pthread_mutex_trylock(&readClinetLock))
 //                    perror("serviceBorrow mutex LOCK failed!");
@@ -108,40 +111,40 @@ void *serviceBorrow(void *c) {
 //                if(!pthread_mutex_unlock(&readClinetLock))
 //                    perror("serviceBorrow mutex UNLOCK failed!");
 
-                printf("read>>>%d %s\n:",n,inbuf);
+                printf("read>>>%d %s\n:", n, inbuf);
 //                if(!strncmp(inbuf,"y",1)){
-                if(strstr(inbuf,"y")){
-                    BankMoney=BankMoney-msgMoney;
-                    usr.money=usr.money+msgMoney;
-                    bzero(outbuf,BUFF_LENGTH);
-                    sprintf(outbuf,"Borrow success!\nNow your account sum: %d, See you :-)\n",usr.money);
-                } else if(!strcmp(inbuf,"n")){
-                    sprintf(outbuf,"There,May you can come next time,Bye.");
+                if (strstr(inbuf, "y")) {
+                    BankMoney = BankMoney - msgMoney;
+                    usr.money = usr.money + msgMoney;
+                    bzero(outbuf, BUFF_LENGTH);
+                    sprintf(outbuf, "Borrow success!\nNow your account sum: %d, See you :-)\n", usr.money);
+                } else if (!strcmp(inbuf, "n")) {
+                    sprintf(outbuf, "There,May you can come next time,Bye.");
                 }
-                served=1;
+                served = 1;
                 printf("[>>>]Borrow Done.\n");
             }
         } else if (strstr(msg, "store")) {
-            sprintf(outbuf,"In store ser");
-            served=1;
+            sprintf(outbuf, "In store ser");
+            served = 1;
             printf("\n\n>>>>>>>>>>>>STORE\n\n");
-        }
-        else{
-            sprintf(outbuf,"Invalid Input,EXIT :(");
+        } else {
+            sprintf(outbuf, "Invalid Input,EXIT :(");
             served = 1;
         }
     }
     printf("[>>>]SERVED==1 serviceBorrow() exit.\n\n");
-//    borrowClientList.pop_back()
     borrowClientDeque.pop_front(); // Serve done: pop the front Client in Queue.
     write(usr.contactsd, outbuf, sizeof(outbuf));
-//    pthread_mutex_unlock(&readClinetLock);
+
+    pthread_mutex_unlock(&queueLock);
+
     pthread_exit(0);
-    return (void *)NULL;
+    return (void *) NULL;
 }
 
 void *distServer(void *p) {
-    printf("[>>>]Here is *distServer(void *p)\n");
+    printf("[>>>]Here is *DistServer(void *p)\n");
     contact usr = *(contact *) p;
     int curServerID;
     char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
@@ -150,22 +153,25 @@ void *distServer(void *p) {
 
     int waitTime = INT32_MAX;
 
-//    int done = 0;
+    int done = 0;
 
 
-    while(true) {
+    while(!done) {
         if (!strstr(inbuf, "borrow")) {
             borrowClientDeque.push_back(usr);
+
             checkDeque(borrowClientDeque);
+
 //        waitTime = checkList(borrowClientList);
             curServerID = getListHeadID(borrowClientDeque);
             if (curServerID == usr.id) {
                 if (0 != pthread_create(&distTid[usr.id], NULL, serviceBorrow, &usr)) {
                     perror("Thread:<serviceBorrow> creation Failed!");
                     distTid[usr.id] = (pthread_t) -1; // to be sure we don't have unknown values... cast
+                    break;
                 }
                 pthread_join(distTid[usr.id], 0);
-                break;
+                done = 1;
             }
         } else if (!strstr(inbuf, "store")) {
             storeClientDeque.push_back(usr);
@@ -244,6 +250,7 @@ void chat(int sd2) {
                         continue;
                     }
                     pthread_join(sTid[clientDict[sd2].id],0);
+                    printf("pthread_join(sTid[clientDict[sd2].id],0);\n");
                 }
 
             } else if (!strcmp(inbuf, "p")) {
@@ -420,6 +427,7 @@ int main(int argc, char **argv) {
     for (i = 0; i < MAXTHREADS; i++) {
         tid[i] = (pthread_t) -1;
 //        sTid[i] = (pthread_t) -1;
+//        distTid[i] = (pthread_t ) -1;
         active_socket[i] = -1;
     }
 
@@ -553,7 +561,7 @@ unsigned long checkDeque(serverList cliList) {
     cout<<"-------checkDeque---------"<<endl;
     cout<<"[Check List>>>]"<<endl;
     for(auto it = cliList.begin();it!=cliList.end();it++){
-        printf("%s %s %ld\n", it->regInfo[it->id].second.c_str(), it->usrname, it->regInfo[it->id].first);
+        printf("%d %s %ld\n", it->id, it->usrname, it->regInfo[it->id].first);
         t = t+it->regInfo[it->id].first;
     }
     cout<<"*******checkDeque*********"<<endl;
