@@ -27,7 +27,7 @@
 #define STRLEN 256
 #define PROTO_PORT 60000
 #define QLEN 1
-#define SERVERTIME 180 //in seconds
+#define SERVERTIME 20 //in seconds
 
 #define MAX_CONTACTS 3
 
@@ -123,6 +123,8 @@ void *serviceBorrow(void *c) {
     char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
     strcpy(msg, usr.inMsg);
+    struct timeval cur_tv;
+    gettimeofday(&cur_tv,&g_tz);
 
     // start usr time tick
     if(!startTick(borrowClientDeque,usr)){
@@ -144,22 +146,26 @@ void *serviceBorrow(void *c) {
                 write(usr.contactsd, outbuf, sizeof(outbuf));
 //                if(!pthread_mutex_trylock(&readClinetLock))
 //                    perror("serviceBorrow mutex LOCK failed!");
-                n = read(usr.contactsd, inbuf, sizeof(inbuf));
+                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf))
+                     && ((cur_tv.tv_sec - borrowClientDeque[usr.id].startTv.tv_sec) < SERVERTIME )) {
 //                if(!pthread_mutex_unlock(&readClinetLock))
 //                    perror("serviceBorrow mutex UNLOCK failed!");
 
-                printf("read>>>%d %s\n:", n, inbuf);
 //                if(!strncmp(inbuf,"y",1)){
-                if (strstr(inbuf, "y")) {
-                    BankMoney = BankMoney - msgMoney;
-                    usr.money = usr.money + msgMoney;
-                    bzero(outbuf, BUFF_LENGTH);
-                    sprintf(outbuf, "Borrow success!\nNow your account sum: %d, See you :-)\n", usr.money);
-                } else if (!strcmp(inbuf, "n")) {
-                    sprintf(outbuf, "There,May you can come next time,Bye.");
+                    if (strstr(inbuf, "y")) {
+                        BankMoney = BankMoney - msgMoney;
+                        usr.money = usr.money + msgMoney;
+                        bzero(outbuf, BUFF_LENGTH);
+                        sprintf(outbuf, "Borrow success!\nNow your account sum: %d, See you :-)\n", usr.money);
+                    } else if (!strcmp(inbuf, "n")) {
+                        sprintf(outbuf, "There,May you can come next time,Bye.");
+                    }
+                    served = 1;
+                    printf("[>>>]Borrow Done.\n");
+                }else{
+                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out!!!\033[0m");
+                    served = 1;
                 }
-                served = 1;
-                printf("[>>>]Borrow Done.\n");
             }
         } else if (strstr(msg, "store")) {
             sprintf(outbuf, "In store ser");
@@ -170,7 +176,7 @@ void *serviceBorrow(void *c) {
             served = 1;
         }
     }
-    printf("[>>>]SERVED==1 serviceBorrow() exit.\n\n");
+//    printf("[>>>]SERVED==1 serviceBorrow() exit.\n\n");
     borrowClientDeque.pop_front(); // Serve done: pop the front Client in Queue.
     write(usr.contactsd, outbuf, sizeof(outbuf));
 
@@ -670,6 +676,7 @@ bool startTick(serverList &deque, contact usr){
 //           cout<<"[in startTick before>>]"<<endl;
 //           checkDeque(deque);
            gettimeofday(&it->startTv, &g_tz);
+           gettimeofday(&usr.startTv, &g_tz);
 //           cout<<"[in startTick end>>]"<<endl;
 //           checkDeque(deque);
            return true;
@@ -727,7 +734,8 @@ int monitDeque(serverList deque) {
                    1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
                    p->tm_hour, p->tm_min, p->tm_sec);
 
-            printf(" %d %ld % 5s\t", it->id,it->regInfo[it->id].first,it->usrname);
+//            printf(" %d %ld % -5s\t", it->id,it->regInfo[it->id].first,it->usrname);
+            printf(" %d % -3s\t", it->id,it->usrname);
             printf("elapsing: %ld s\t",remin_sec);
             printf("\33[31;22min server\n\33[0m");
         }
@@ -739,7 +747,8 @@ int monitDeque(serverList deque) {
                    1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
                    p->tm_hour, p->tm_min, p->tm_sec);
 
-            printf(" %d %ld % 5s\t", it->id,it->regInfo[it->id].first,it->usrname);
+//            printf(" %d %ld % -5s\t", it->id,it->regInfo[it->id].first,it->usrname);
+            printf(" %d % -3s\t", it->id,it->usrname);
             printf("remain:   %ld s\t",remin_sec);
             printf("Wait\n");
         }
