@@ -31,6 +31,8 @@
 
 #define MAX_CONTACTS 3
 
+#define FLASHRATE 1
+
 using namespace std;
 int BankMoney = UINTMAX_MAX;
 int clientSeq = 1;
@@ -39,6 +41,8 @@ int active_socket[MAXTHREADS];
 int thread_retval = 0;
 int sd;
 int endloop;
+
+int monitor_flag = 1;
 
 struct sysinfo sys_info;
 struct timezone g_tz;
@@ -89,6 +93,9 @@ unsigned long checkDeque(serverList cliList);
 bool inDeque(serverList cliList, contact usr);
 
 bool startTick(serverList &deque, contact contact);
+bool setRegTick(serverList &deque, contact contact);
+
+int monitDeque(serverList deque);
 
 int getListHeadID(serverList cliList){
     return cliList.front().id;
@@ -96,10 +103,17 @@ int getListHeadID(serverList cliList){
 
 void prGreen();
 void prNormal();
+void cleanScreen();
 
-void sysDeamon();
+void *sysDeamon(void *deque);
 
 void *serviceBorrow(void *c) {
+
+    if(monitor_flag==1) {
+        monitor_flag =0; //just create one daemon. mmm
+        pthread_t monitor_t = (pthread_t) -1;
+        pthread_create(&monitor_t, NULL, sysDeamon, &borrowClientDeque);
+    }
 
     pthread_mutex_lock(&queueLock);
 
@@ -126,7 +140,7 @@ void *serviceBorrow(void *c) {
             if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
                 sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
             } else {
-                sprintf(outbuf, "Borrow from bank: %d?[y/n]\n", msgMoney);
+                sprintf(outbuf, "\33[32;22mBorrow from bank: %d?[y/n]\33[0m\n", msgMoney);
                 write(usr.contactsd, outbuf, sizeof(outbuf));
 //                if(!pthread_mutex_trylock(&readClinetLock))
 //                    perror("serviceBorrow mutex LOCK failed!");
@@ -179,14 +193,18 @@ void *distServer(void *p) {
     int done = 0;
 
 
+
     while (!done) {
         if (strstr(inbuf, "borrow")) {
 
             //only push each #ID once time
-            if (!inDeque(borrowClientDeque, usr))
+            if (!inDeque(borrowClientDeque, usr)) {
+//                gettimeofday(&usr.regTv, &g_tz); //init time struct
                 borrowClientDeque.push_back(usr);
+//                setRegTick(borrowClientDeque, usr);
+            }
 
-            checkDeque(borrowClientDeque);
+//            checkDeque(borrowClientDeque);
 
 //        waitTime = checkList(borrowClientList);
             curServerID = getListHeadID(borrowClientDeque);
@@ -200,13 +218,13 @@ void *distServer(void *p) {
                 done = 1;
             }else {
                 sprintf(outbuf,"%s","Wait previous client finish\n");
-                printf("[>>>]Wait previous client finish - -");
+//                printf("[>>>]Wait previous client finish - -");
                 write(usr.contactsd,outbuf,sizeof(outbuf));
 
                 pthread_mutex_lock(&queueLock);
 
                 sprintf(outbuf,"%s","You time\n");
-                printf("[>>>]Wait previous client finish - -");
+//                printf("[>>>]Wait previous client finish - -");
                 write(usr.contactsd,outbuf,sizeof(outbuf));
 
                 pthread_mutex_unlock(&queueLock);
@@ -256,10 +274,12 @@ void chat(int sd2) {
             strcpy(clientDict[sd2].inMsg,inbuf);
             //get clientSeq #ID
             if(!strncmp(inbuf,"monitor",7)){
-                sysDeamon();
+                served = 1;
+//                sysDaemon(sd2,outbuf); //not good to implement monitor daemon
             }
             else if(strstr(inbuf,"checkBdq")){
-                checkDeque(borrowClientDeque);
+//                checkDeque(borrowClientDeque);
+                monitDeque(borrowClientDeque);
             }
             else if (!strncmp(inbuf, "#reg", 4)) {
                 /*
@@ -513,13 +533,22 @@ int main(int argc, char **argv) {
 
     signal(SIGINT, interrupt_handler);
 
+    printf("\33[2J");
+    printf("\33[00H");
     printf("Server in the service loop\n");
+
+
+
 
     while (!endloop) {
 
         alen = sizeof(cad);
 
-        printf("Server is waiting for a Client to serve...\n");
+//        printf("Server is waiting for a Client to serve...\n");
+//        cleanScreen();
+//        checkDeque(borrowClientDeque);
+
+
 
         sd2 = accept(sd, (struct sockaddr *) &cad, &alen);
         if (sd2 < 0) {
@@ -592,6 +621,8 @@ int main(int argc, char **argv) {
 
         printf("nuovo thread attivato\n");
 
+        sleep(5);
+        printf("\033[2J");
     }
     printf("Server finished\n");
 }
@@ -636,11 +667,11 @@ bool inDeque(serverList cliList, contact usr){
 bool startTick(serverList &deque, contact usr){
     for(auto it = deque.begin();it!=deque.end();it++){
        if(it->id==usr.id) {
-           cout<<"[in startTick before>>]"<<endl;
-           checkDeque(deque);
+//           cout<<"[in startTick before>>]"<<endl;
+//           checkDeque(deque);
            gettimeofday(&it->startTv, &g_tz);
-           cout<<"[in startTick end>>]"<<endl;
-           checkDeque(deque);
+//           cout<<"[in startTick end>>]"<<endl;
+//           checkDeque(deque);
            return true;
        }
     }
@@ -648,14 +679,84 @@ bool startTick(serverList &deque, contact usr){
 
 }
 
-
-
-void sysDeamon(){
-    while(true) {
-        printf("\033[00H");
-        printf("-----------------Borrow List-----------------\n");
-        checkDeque(borrowClientDeque);
+bool setRegTick(serverList &deque, contact usr){
+    for(auto it = deque.begin();it!=deque.end();it++){
+        if(it->id==usr.id) {
+//            cout<<"[in startRegTick before>>]"<<endl;
+//            checkDeque(deque);
+            gettimeofday(&it->startTv, &g_tz);
+//            cout<<"[in startRegTick end>>]"<<endl;
+//            checkDeque(deque);
+            return true;
+        }
     }
+    return false;
+
+}
+
+
+
+
+void *sysDeamon(void *deque) {
+    int flag = 1;
+//    serverList list = *(serverList *)deque;
+    while (flag == 1) {
+        monitDeque(*(serverList *)deque);
+    }
+}
+
+int monitDeque(serverList deque) {
+    int firstFlag = 1;
+    struct tm *p,*cur;
+    struct timeval cur_tv;
+    __time_t remin_sec = 0;
+
+    gettimeofday(&cur_tv,&g_tz);
+
+
+    printf("\033[2J");
+    printf("\033[00H");
+    for(auto it = deque.begin();it!=deque.end();it++){
+        if(firstFlag==1)
+            printf("\33[32;22m");
+        if(it==deque.begin()) {
+            // client on server
+            remin_sec = it->time + it->startTv.tv_sec - cur_tv.tv_sec ;
+            p = localtime(&it->startTv.tv_sec);
+            printf("%d/%d/%d %d:%d:%02d\t",
+                   1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
+                   p->tm_hour, p->tm_min, p->tm_sec);
+
+            printf(" %d %ld % 5s\t", it->id,it->regInfo[it->id].first,it->usrname);
+            printf("elapsing: %ld s\t",remin_sec);
+            printf("\33[31;22min server\n\33[0m");
+        }
+        else{
+            // client in wait queue
+            remin_sec = it->time; // + it->startTv.tv_sec - cur_tv.tv_sec ;
+            p = localtime(&it->regTv.tv_sec);
+            printf("%d/%d/%d %d:%d:%02d\t",
+                   1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
+                   p->tm_hour, p->tm_min, p->tm_sec);
+
+            printf(" %d %ld % 5s\t", it->id,it->regInfo[it->id].first,it->usrname);
+            printf("remain:   %ld s\t",remin_sec);
+            printf("Wait\n");
+        }
+
+
+
+//        reminer_sec = it->time
+//        printf("%d",)
+        if(firstFlag==1){
+            firstFlag=0;
+            printf("\33[0m");
+        }
+
+    }
+
+    sleep(FLASHRATE);
+
 }
 
 void prGreen(){
@@ -664,4 +765,9 @@ void prGreen(){
 
 void prNormal(){
     printf("\033[0m");
+}
+
+void cleanScreen(){
+    sleep(0.5);
+    printf("\03300H");
 }
