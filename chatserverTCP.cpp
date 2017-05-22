@@ -27,7 +27,7 @@
 #define STRLEN 256
 #define PROTO_PORT 60000
 #define QLEN 1
-#define SERVERTIME 20 //in seconds
+#define SERVERTIME 120 //in seconds
 
 #define MAX_CONTACTS 3
 
@@ -92,7 +92,7 @@ serverList borrowClientDeque,storeClientDeque;
 unsigned long checkDeque(serverList cliList);
 bool inDeque(serverList cliList, contact usr);
 
-bool startTick(serverList &deque, contact contact);
+bool startTick(serverList &deque, contact &contact);
 bool setRegTick(serverList &deque, contact contact);
 
 int monitDeque(serverList deque);
@@ -146,8 +146,9 @@ void *serviceBorrow(void *c) {
                 write(usr.contactsd, outbuf, sizeof(outbuf));
 //                if(!pthread_mutex_trylock(&readClinetLock))
 //                    perror("serviceBorrow mutex LOCK failed!");
-                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf))
-                     && ((cur_tv.tv_sec - borrowClientDeque[usr.id].startTv.tv_sec) < SERVERTIME )) {
+//                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
+                n = read(usr.contactsd, inbuf, sizeof(inbuf));
+                if ( -1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
 //                if(!pthread_mutex_unlock(&readClinetLock))
 //                    perror("serviceBorrow mutex UNLOCK failed!");
 
@@ -670,7 +671,7 @@ bool inDeque(serverList cliList, contact usr){
     return false;
 }
 
-bool startTick(serverList &deque, contact usr){
+bool startTick(serverList &deque, contact &usr){
     for(auto it = deque.begin();it!=deque.end();it++){
        if(it->id==usr.id) {
 //           cout<<"[in startTick before>>]"<<endl;
