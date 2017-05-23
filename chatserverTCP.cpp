@@ -254,6 +254,7 @@ void *serviceStore(void *c) {
     while (served == 0) {
         bzero(outbuf, BUFF_LENGTH);
         bzero(inbuf, BUFF_LENGTH);
+#ifdef false
         if (strstr(msg, "borrow")) {
             sscanf(msg, "%*s%s %d", tmp, &msgMoney);
             printf("[serviceBorrow()]>>> money:%d\n", msgMoney);
@@ -289,6 +290,8 @@ void *serviceStore(void *c) {
                 }
             }
         } else if (strstr(msg, "store")) {
+#endif
+        if (strstr(msg, "store")) {
             sscanf(msg, "%*s%s %d", tmp, &msgMoney);
             printf("[serviceStore()]>>> money:%d\n", msgMoney);
             if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
@@ -323,7 +326,7 @@ void *serviceStore(void *c) {
                 }
             }
         } else {
-            sprintf(outbuf, "Invalid Input,EXIT :(");
+            sprintf(outbuf, "Invalid Input,EXIT store. :(");
             served = 1;
         }
     }
