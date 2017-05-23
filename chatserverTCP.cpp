@@ -23,15 +23,15 @@
 
 #define MAXTHREADS 3
 #define KILO 1024
-#define BUFF_LENGTH 1000
-#define STRLEN 256
+#define BUFF_LENGTH 1024
+#define STRLEN  256
 #define PROTO_PORT 60000
 #define QLEN 1
-#define SERVERTIME 120 //in seconds
+#define SERVERTIME 20 //in seconds
 
 #define MAX_CONTACTS 3
 
-#define FLASHRATE 1
+#define FLASHRATE 0.5
 
 using namespace std;
 int BankMoney = UINTMAX_MAX;
@@ -56,12 +56,12 @@ typedef map<int, pthread_t> serverTid;
 serverTid sTid,distTid;
 pthread_t tid[MAXTHREADS];
 pthread_mutex_t readClinetLock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t queueLock= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queueBorrow = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queueStore= PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t initUserLock= PTHREAD_MUTEX_INITIALIZER;
 int t_mutex;
 
 typedef set<string> setOnlineClient;
-setOnlineClient sli;
 
 typedef map<int, pair<unsigned long, string>> registerInfo; //< ID, <register_time, name>>
 
@@ -74,13 +74,13 @@ typedef struct contact {
     int contactsd = 0;
     registerInfo regInfo;
     int money = 0;
+    int store = 0;
     pthread_mutex_t mlock = PTHREAD_MUTEX_INITIALIZER;
     struct timeval regTv;
     struct timeval startTv;
     int time = SERVERTIME;
 } contact;
 
-contact onlinecontacts[MAX_CONTACTS];
 
 typedef map<int, contact> clientMap;
 clientMap clientDict;
@@ -95,10 +95,10 @@ bool inDeque(serverList cliList, contact usr);
 bool startTick(serverList &deque, contact &contact);
 bool setRegTick(serverList &deque, contact contact);
 
-int monitDeque(serverList deque);
+int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int showLine_V, int showLine_H);
 
 int getListHeadID(serverList cliList){
-    return cliList.front().id;
+    return cliList.front().contactsd;
 }
 
 void prGreen();
@@ -115,20 +115,138 @@ void *serviceBorrow(void *c) {
         pthread_create(&monitor_t, NULL, sysDeamon, &borrowClientDeque);
     }
 
-    pthread_mutex_lock(&queueLock);
+    pthread_mutex_lock(&queueBorrow);
+
+//    contact usr = *(contact *) c;
+    int id = (*(contact *) c).contactsd;
+    int msgMoney;
+    ssize_t n;
+    int served = 0;
+    char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
+    char msg[STRLEN], tmp[STRLEN];
+    strcpy(msg, clientDict[id].inMsg);
+    struct timeval cur_tv;
+
+    // start usr time tick
+    if(!startTick(borrowClientDeque,clientDict[id])){
+       perror("[>>>ERR]:StartTick() Failed\n");
+    }
+//    gettimeofday(&(usr.startTv),&g_tz);
+//    checkDeque(borrowClientDeque);
+
+    while (served == 0) {
+        bzero(outbuf, BUFF_LENGTH);
+        bzero(inbuf, BUFF_LENGTH);
+        if (strstr(msg, "borrow")) {
+            sscanf(msg, "%*s%s %d", tmp, &msgMoney);
+            printf("[serviceBorrow()]>>> money:%d\n", msgMoney);
+            if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
+                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
+            } else {
+                sprintf(outbuf, "\33[32;22mBorrow from bank: %d?[y/n]\33[0m\n", msgMoney);
+                write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
+//                if(!pthread_mutex_trylock(&readClinetLock))
+//                    perror("serviceBorrow mutex LOCK failed!");
+//                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
+                n = read(clientDict[id].contactsd, inbuf, sizeof(inbuf));
+
+                gettimeofday(&cur_tv,&g_tz);
+
+                if ( -1 != n && ((cur_tv.tv_sec - clientDict[id].startTv.tv_sec) < SERVERTIME )) {
+//                if(!pthread_mutex_unlock(&readClinetLock))
+//                    perror("serviceBorrow mutex UNLOCK failed!");
+
+//                if(!strncmp(inbuf,"y",1)){
+                    if (strstr(inbuf, "y")) {
+                        BankMoney = BankMoney - msgMoney;
+                        clientDict[id].store -=  msgMoney;
+                        clientDict[id].money = clientDict[id].money + msgMoney;
+                        bzero(outbuf, BUFF_LENGTH);
+                        sprintf(outbuf, "Borrow success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", clientDict[id].money, clientDict[id].store);
+                    } else if (!strcmp(inbuf, "n")) {
+                        sprintf(outbuf, "There,May you can come next time,Bye.");
+                    }
+                    served = 1;
+                    printf("[>>>]Borrow Done.\n");
+                }else{
+                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out!!!\033[0m");
+                    served = 1;
+                }
+            }
+        } else if (strstr(msg, "store")) {
+            served = 1;
+#ifdef false
+            sscanf(msg, "%*s%s %d", tmp, &msgMoney);
+            printf("[serviceStore()]>>> money:%d\n", msgMoney);
+            if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
+                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
+            } else {
+                sprintf(outbuf, "\33[32;22mStore to bank: %d?[y/n]\33[0m\n", msgMoney);
+                write(usr.contactsd, outbuf, sizeof(outbuf));
+//                if(!pthread_mutex_trylock(&readClinetLock))
+//                    perror("serviceBorrow mutex LOCK failed!");
+//                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
+                n = read(usr.contactsd, inbuf, sizeof(inbuf));
+                if ( -1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
+//                if(!pthread_mutex_unlock(&readClinetLock))
+//                    perror("serviceBorrow mutex UNLOCK failed!");
+
+//                if(!strncmp(inbuf,"y",1)){
+                    if (strstr(inbuf, "y")) {
+                        BankMoney = BankMoney + msgMoney;
+                        usr.store = usr.store + msgMoney;
+                        usr.money = usr.money - msgMoney;
+                        bzero(outbuf, BUFF_LENGTH);
+                        sprintf(outbuf, "Store success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", usr.money,usr.store);
+                    } else if (!strcmp(inbuf, "n")) {
+                        sprintf(outbuf, "There,May you can come next time,Bye.");
+                    }
+                    served = 1;
+                    printf("[>>>]Borrow Done.\n");
+                }else{
+                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out!!!\033[0m");
+                    served = 1;
+                }
+            }
+#endif
+        } else {
+            sprintf(outbuf, "Invalid Input,EXIT :(");
+            served = 1;
+        }
+    }
+//    printf("[>>>]SERVED==1 serviceBorrow() exit.\n\n");
+    borrowClientDeque.pop_front(); // Serve done: pop the front Client in Queue.
+    write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
+
+    pthread_mutex_unlock(&queueBorrow);
+
+    pthread_exit(0);
+    return (void *) NULL;
+}
+
+
+void *serviceStore(void *c) {
+
+    if(monitor_flag==1) {
+        monitor_flag =0; //just create one daemon. mmm
+        pthread_t monitor_t = (pthread_t) -1;
+        pthread_create(&monitor_t, NULL, sysDeamon, &storeClientDeque);
+    }
+
+    pthread_mutex_lock(&queueStore);
 
     contact usr = *(contact *) c;
-    int n, msgMoney;
+    int msgMoney;
+    ssize_t n;
     int served = 0;
     char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
     strcpy(msg, usr.inMsg);
     struct timeval cur_tv;
-    gettimeofday(&cur_tv,&g_tz);
 
     // start usr time tick
-    if(!startTick(borrowClientDeque,usr)){
-       perror("[>>>ERR]:StartTick() Failed\n");
+    if(!startTick(storeClientDeque,usr)){
+        perror("[>>>ERR]:StartTick() Failed\n");
     }
 //    gettimeofday(&(usr.startTv),&g_tz);
 //    checkDeque(borrowClientDeque);
@@ -148,6 +266,7 @@ void *serviceBorrow(void *c) {
 //                    perror("serviceBorrow mutex LOCK failed!");
 //                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
                 n = read(usr.contactsd, inbuf, sizeof(inbuf));
+                gettimeofday(&cur_tv,&g_tz);
                 if ( -1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
 //                if(!pthread_mutex_unlock(&readClinetLock))
 //                    perror("serviceBorrow mutex UNLOCK failed!");
@@ -155,9 +274,10 @@ void *serviceBorrow(void *c) {
 //                if(!strncmp(inbuf,"y",1)){
                     if (strstr(inbuf, "y")) {
                         BankMoney = BankMoney - msgMoney;
+                        usr.store = usr.store - msgMoney;
                         usr.money = usr.money + msgMoney;
                         bzero(outbuf, BUFF_LENGTH);
-                        sprintf(outbuf, "Borrow success!\nNow your account sum: %d, See you :-)\n", usr.money);
+                        sprintf(outbuf, "Borrow success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", usr.money,usr.store);
                     } else if (!strcmp(inbuf, "n")) {
                         sprintf(outbuf, "There,May you can come next time,Bye.");
                     }
@@ -169,19 +289,49 @@ void *serviceBorrow(void *c) {
                 }
             }
         } else if (strstr(msg, "store")) {
-            sprintf(outbuf, "In store ser");
-            served = 1;
-            printf("\n\n>>>>>>>>>>>>STORE\n\n");
+            sscanf(msg, "%*s%s %d", tmp, &msgMoney);
+            printf("[serviceStore()]>>> money:%d\n", msgMoney);
+            if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
+                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
+            } else {
+                sprintf(outbuf, "\33[32;22mStore to bank: %d?[y/n]\33[0m\n", msgMoney);
+                write(usr.contactsd, outbuf, sizeof(outbuf));
+//                if(!pthread_mutex_trylock(&readClinetLock))
+//                    perror("serviceBorrow mutex LOCK failed!");
+//                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
+                n = read(usr.contactsd, inbuf, sizeof(inbuf));
+                gettimeofday(&cur_tv,&g_tz);
+                if ( -1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
+//                if(!pthread_mutex_unlock(&readClinetLock))
+//                    perror("serviceBorrow mutex UNLOCK failed!");
+
+//                if(!strncmp(inbuf,"y",1)){
+                    if (strstr(inbuf, "y")) {
+                        BankMoney = BankMoney + msgMoney;
+                        usr.store = usr.store + msgMoney;
+                        usr.money = usr.money - msgMoney;
+                        bzero(outbuf, BUFF_LENGTH);
+                        sprintf(outbuf, "Store success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", usr.money,usr.store);
+                    } else if (!strcmp(inbuf, "n")) {
+                        sprintf(outbuf, "There,May you can come next time,Bye.");
+                    }
+                    served = 1;
+                    printf("[>>>]Borrow Done.\n");
+                }else{
+                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out!!!\033[0m");
+                    served = 1;
+                }
+            }
         } else {
             sprintf(outbuf, "Invalid Input,EXIT :(");
             served = 1;
         }
     }
 //    printf("[>>>]SERVED==1 serviceBorrow() exit.\n\n");
-    borrowClientDeque.pop_front(); // Serve done: pop the front Client in Queue.
+    storeClientDeque.pop_front(); // Serve done: pop the front Client in Queue.
     write(usr.contactsd, outbuf, sizeof(outbuf));
 
-    pthread_mutex_unlock(&queueLock);
+    pthread_mutex_unlock(&queueStore);
 
     pthread_exit(0);
     return (void *) NULL;
@@ -189,57 +339,81 @@ void *serviceBorrow(void *c) {
 
 void *distServer(void *p) {
     printf("[>>>]Here is *DistServer(void *p)\n");
-    contact usr = *(contact *) p;
+    int id =  (*(contact *) p).contactsd;
     int curServerID;
-    char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
+    char outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
-    strcpy(inbuf, usr.inMsg);
 
     int waitTime = INT32_MAX;
 
     int done = 0;
 
-
-
     while (!done) {
-        if (strstr(inbuf, "borrow")) {
+        printf("clientDict[id].inMsg >>>  %s\n",clientDict[id].inMsg);
+//        if (strstr((*(contact *)p).inMsg, " borrow ")) {
+        if (strstr(clientDict[id].inMsg, " borrow ")) {
 
             //only push each #ID once time
-            if (!inDeque(borrowClientDeque, usr)) {
-//                gettimeofday(&usr.regTv, &g_tz); //init time struct
-                borrowClientDeque.push_back(usr);
-//                setRegTick(borrowClientDeque, usr);
+            if (!inDeque(borrowClientDeque, clientDict[id])) {
+                borrowClientDeque.push_back(clientDict[id]);
             }
 
-//            checkDeque(borrowClientDeque);
-
-//        waitTime = checkList(borrowClientList);
             curServerID = getListHeadID(borrowClientDeque);
-            if (curServerID == usr.id) {
-                if (0 != pthread_create(&distTid[usr.id], NULL, serviceBorrow, &usr)) {
+            if (curServerID == id) {
+                if (0 != pthread_create(&distTid[id], NULL, serviceBorrow, &clientDict[id])) {
                     perror("Thread:<serviceBorrow> creation Failed!");
-                    distTid[usr.id] = (pthread_t) -1; // to be sure we don't have unknown values... cast
+                    distTid[id] = (pthread_t) -1; // to be sure we don't have unknown values... cast
                     break;
                 }
-                pthread_join(distTid[usr.id], 0);
+                pthread_join(distTid[id], 0);
                 done = 1;
             }else {
                 sprintf(outbuf,"%s","Wait previous client finish\n");
 //                printf("[>>>]Wait previous client finish - -");
-                write(usr.contactsd,outbuf,sizeof(outbuf));
+                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
 
-                pthread_mutex_lock(&queueLock);
+                pthread_mutex_lock(&queueBorrow); //wait previous unlock
 
                 sprintf(outbuf,"%s","You time\n");
 //                printf("[>>>]Wait previous client finish - -");
-                write(usr.contactsd,outbuf,sizeof(outbuf));
+                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
 
-                pthread_mutex_unlock(&queueLock);
+                pthread_mutex_unlock(&queueBorrow);
                 continue;
             }
 
-        } else if (strstr(inbuf, "store")) {
-            storeClientDeque.push_back(usr);
+        } else if (strstr(clientDict[id].inMsg, " store")) {
+
+            //only push each #ID once time
+            if (!inDeque(storeClientDeque, clientDict[id])) {
+                storeClientDeque.push_back(clientDict[id]);
+            }
+
+            curServerID = getListHeadID(storeClientDeque);
+            if (curServerID == id) {
+                if (0 != pthread_create(&distTid[id], NULL, serviceStore, &clientDict[id])) {
+                    perror("Thread:<serviceStore> creation Failed!");
+                    distTid[id] = (pthread_t) -1; // to be sure we don't have unknown values... cast
+                    break;
+                }
+                pthread_join(distTid[id], 0);
+                done = 1;
+            }else {
+                sprintf(outbuf,"%s","Wait previous client finish\n");
+//                printf("[>>>]Wait previous client finish - -");
+                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
+
+                pthread_mutex_lock(&queueStore); //wait previous unlock
+
+                sprintf(outbuf,"%s","You time\n");
+//                printf("[>>>]Wait previous client finish - -");
+                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
+
+                pthread_mutex_unlock(&queueStore);
+                continue;
+            }
+
+
         }
     }
 
@@ -269,6 +443,11 @@ void chat(int sd2) {
         }
         */
         n = read(sd2, inbuf, sizeof(inbuf));
+        printf("inbuf >>>  %s\n",inbuf);
+        printf("clientDict[id].inMsg before strcpy>>>  %s\n",clientDict[sd2].inMsg);
+        bzero(clientDict[sd2].inMsg,STRLEN);
+        strcpy(clientDict[sd2].inMsg,inbuf);
+        printf("clientDict[id].inMsg after strcpy>>>  %s\n",clientDict[sd2].inMsg);
 //        pthread_mutex_lock(&readClinetLock);
 //        cout<<"read inbuf size: "<<n<<endl;
 
@@ -278,15 +457,16 @@ void chat(int sd2) {
             write(sd2, outbuf, sizeof(outbuf));
             served = 1;
         } else {
-            strcpy(clientDict[sd2].inMsg,inbuf);
             //get clientSeq #ID
             if(!strncmp(inbuf,"monitor",7)){
                 served = 1;
 //                sysDaemon(sd2,outbuf); //not good to implement monitor daemon
             }
-            else if(strstr(inbuf,"checkBdq")){
-//                checkDeque(borrowClientDeque);
-                monitDeque(borrowClientDeque);
+            else if(strstr(inbuf,"checkBorrow")){
+                monitDeque(borrowClientDeque, true, 1, 20, 20);
+            }
+            else if(strstr(inbuf,"checkStore")){
+                monitDeque(storeClientDeque, true, 1, 20, 50);
             }
             else if (!strncmp(inbuf, "#reg", 4)) {
                 /*
@@ -375,20 +555,6 @@ void chat(int sd2) {
 
                 printf("\nMessage [%s] is for [%s]\n\n", message, clientname);
 
-//                for (i = 0; onlinecontacts[i].contactsd != sd2; i++);
-//                sprintf(outbuf, "<%s> wrote: [%s]", onlinecontacts[i].contactname, message);
-                for (i = 0; onlinecontacts[i].contactsd != sd2; i++);
-                sprintf(outbuf, "<%s> wrote: [%s]", clientDict[sd2].usrname, message);
-
-                //strcpy(outbuf, message);
-
-                i = 0;
-                while (strcmp(onlinecontacts[i].contactname, clientname)) {
-                    i++;
-                }
-
-                write(onlinecontacts[i].contactsd, outbuf, sizeof(outbuf));
-
             } else {
                 sprintf(outbuf, "In BANK thread you input>>> %s\n",inbuf);
                 write(sd2, outbuf, sizeof(outbuf));
@@ -431,28 +597,17 @@ void *manage_connection(void *sdp) {
         outbuf[i] = 0;
     }
 
-    //printf("\ndentro thread contacts [%d]\n\n", contacts);
-
-//    for (i = 0; i < contacts; i++) {
     for (auto k = clientDict.begin(); k != clientDict.end(); k++) {
-
-        //	printf(" dentro for thread%s - %d\n\n", onlinecontacts[i].contactname, onlinecontacts[i].contactsd);
-
-//        sprintf(outbuf, "[%d]: [%s]\n", i, onlinecontacts[i].contactname);
-        registerInfo tmp = k->second.regInfo;
-        for (auto m = tmp.begin(); m != tmp.end(); m++) {
-            sprintf(outbuf, "[%d]: [%s]: [%ld]", m->first, m->second.second.c_str(), m->second.first);
-        }
+            sprintf(outbuf, "[%d]: [%s]: [%ld]", k->first, k->second.usrname, k->second.regTv.tv_sec);
         //printf("[%s]\n\n", buffer);
         write(sd2, outbuf, sizeof(outbuf));
     }
 
+    bzero(outbuf,STRLEN);
     sprintf(outbuf, "END");
     write(sd2, outbuf, sizeof(outbuf));
 
     printf("-(IN THREAD)- sent online contacts\n");
-
-    printf("-(IN THREAD)- simulazione di chat\n");
 
 
     chat(sd2);
@@ -460,12 +615,8 @@ void *manage_connection(void *sdp) {
     tid[j] = (pthread_t) -1; // free thread array entry
 
     printf("-(IN THREAD)- close sd2\n");
-    for (i = 0; onlinecontacts[i].contactsd != sd2; i++); // find sd2's name
-    sli.erase(onlinecontacts[i].usrname); // erase name from set<char*>
     close(sd2);
     contacts--;
-    //onlinecontacts[thiscontact].contactname = "removed";
-    //onlinecontacts[thiscontact].contactsd = 0;
     return &thread_retval;
 
 }
@@ -485,7 +636,7 @@ int main(int argc, char **argv) {
 
     int sd2, port, n, i, j = 0;
     char *var;
-    char clientname[256];
+    char clientname[STRLEN];
     char busymsg[] = "BUSY";
     char buffer[BUFF_LENGTH];
 
@@ -540,8 +691,8 @@ int main(int argc, char **argv) {
 
     signal(SIGINT, interrupt_handler);
 
-    printf("\33[2J");
-    printf("\33[00H");
+//    printf("\33[2J");
+//    printf("\33[00H");
     printf("Server in the service loop\n");
 
 
@@ -585,16 +736,11 @@ int main(int argc, char **argv) {
 
             printf("\nClient name is:  [%s]\n\n", clientname);
 
-            strcpy(newcontact.usrname, clientname);
+            strcpy(clientDict[sd2].usrname,clientname);
             string tmp = clientname;
-            sli.insert(tmp);
-            newcontact.contactsd = sd2;  //<-- init client parameter
-            newcontact.money = 600;
-//			newcontact.id=-1;
-//            gettimeofday(&tv, &tz);
-            gettimeofday(&newcontact.regTv, &g_tz); // init contact 's register time
-            onlinecontacts[contacts] = newcontact;
-            clientDict[sd2] = newcontact;
+            clientDict[sd2].contactsd = sd2;
+            clientDict[sd2].money = 600;
+            gettimeofday(&clientDict[sd2].regTv, &g_tz); // init contact 's register time
 
             //look for the first empty slot in thread array
             for (i = 0; tid[i] != (pthread_t) -1; i++);
@@ -673,7 +819,8 @@ bool inDeque(serverList cliList, contact usr){
 
 bool startTick(serverList &deque, contact &usr){
     for(auto it = deque.begin();it!=deque.end();it++){
-       if(it->id==usr.id) {
+//       if(it->id==usr.id) {
+       if(it->contactsd==usr.contactsd) {
 //           cout<<"[in startTick before>>]"<<endl;
 //           checkDeque(deque);
            gettimeofday(&it->startTv, &g_tz);
@@ -709,11 +856,15 @@ void *sysDeamon(void *deque) {
     int flag = 1;
 //    serverList list = *(serverList *)deque;
     while (flag == 1) {
-        monitDeque(*(serverList *)deque);
+
+//        monitDeque(*(serverList *)deque, 20, 20); // monitor input var
+
+        monitDeque(borrowClientDeque, true,0, 20, 20); //monitor global var
+        monitDeque(storeClientDeque, false,1, 20, 50);
     }
 }
 
-int monitDeque(serverList deque) {
+int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int showLine_V, int showLine_H) {
     int firstFlag = 1;
     struct tm *p,*cur;
     struct timeval cur_tv;
@@ -722,9 +873,15 @@ int monitDeque(serverList deque) {
     gettimeofday(&cur_tv,&g_tz);
 
 
-    printf("\033[2J");
-    printf("\033[00H");
+    if(cleanScreen)
+        printf("\033[2J");
+
+//    printf("\033[%d;%dH",showLine_H,showLine_V++);
+
     for(auto it = deque.begin();it!=deque.end();it++){
+
+        printf("\033[%d;%dH",showLine_H++,showLine_V);
+
         if(firstFlag==1)
             printf("\33[32;22m");
         if(it==deque.begin()) {
@@ -765,7 +922,7 @@ int monitDeque(serverList deque) {
 
     }
 
-    sleep(FLASHRATE);
+    sleep(flashRate);
 
 }
 

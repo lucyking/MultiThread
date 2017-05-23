@@ -34,7 +34,7 @@
 
 
 #define KILO 1024
-#define BUFF_LENGTH 1000
+#define BUFF_LENGTH 1024
 #define PROTO_PORT 60000
 
 

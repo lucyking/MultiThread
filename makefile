@@ -1,5 +1,5 @@
 #! /bin/bash
-CFLAG= -std=c++14 -W -Wall
+CFLAG= -g -std=c++14 -W -Wall
 
 all:server client
 
