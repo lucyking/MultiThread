@@ -144,7 +144,8 @@ void *serviceBorrow(void *c) {
             sscanf(msg, "%*s%s %d", tmp, &msgMoney);
             printf("[serviceBorrow()]>>> money:%d\n", msgMoney);
             if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
-                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
+                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one,Exit.\n");
+                served = 1;
             } else {
                 sprintf(outbuf, "\33[32;22mBorrow from bank: %d?[y/n]\33[0m\n", msgMoney);
                 write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
@@ -165,7 +166,7 @@ void *serviceBorrow(void *c) {
                         clientDict[id].store -=  msgMoney;
                         clientDict[id].money = clientDict[id].money + msgMoney;
                         bzero(outbuf, BUFF_LENGTH);
-                        sprintf(outbuf, "Borrow success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", clientDict[id].money, clientDict[id].store);
+                        sprintf(outbuf, "Borrow success!\nNow your <wallet,bank>: <%d,%d> See you :-)\n", clientDict[id].money, clientDict[id].store);
                     } else if (!strcmp(inbuf, "n")) {
                         sprintf(outbuf, "There,May you can come next time,Bye.");
                     }
@@ -200,7 +201,7 @@ void *serviceBorrow(void *c) {
                         usr.store = usr.store + msgMoney;
                         usr.money = usr.money - msgMoney;
                         bzero(outbuf, BUFF_LENGTH);
-                        sprintf(outbuf, "Store success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", usr.money,usr.store);
+                        sprintf(outbuf, "Store success!\nNow your <wallet,bank>: <%d,%d> See you :-)\n", usr.money,usr.store);
                     } else if (!strcmp(inbuf, "n")) {
                         sprintf(outbuf, "There,May you can come next time,Bye.");
                     }
@@ -230,8 +231,8 @@ void *serviceBorrow(void *c) {
 
 void *serviceStore(void *c) {
 
-    if(monitor_flag==1) {
-        monitor_flag =0; //just create one daemon. mmm
+    if (monitor_flag == 1) {
+        monitor_flag = 0; //just create one daemon. mmm
         pthread_t monitor_t = (pthread_t) -1;
         pthread_create(&monitor_t, NULL, sysDeamon, &storeClientDeque);
     }
@@ -248,7 +249,7 @@ void *serviceStore(void *c) {
     struct timeval cur_tv;
 
     // start usr time tick
-    if(!startTick(storeClientDeque,usr)){
+    if (!startTick(storeClientDeque, usr)) {
         perror("[>>>ERR]:StartTick() Failed\n");
     }
 //    gettimeofday(&(usr.startTv),&g_tz);
@@ -257,57 +258,26 @@ void *serviceStore(void *c) {
     while (served == 0) {
         bzero(outbuf, BUFF_LENGTH);
         bzero(inbuf, BUFF_LENGTH);
-#ifdef false
-        if (strstr(msg, "borrow")) {
-            sscanf(msg, "%*s%s %d", tmp, &msgMoney);
-            printf("[serviceBorrow()]>>> money:%d\n", msgMoney);
-            if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
-                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
-            } else {
-                sprintf(outbuf, "\33[32;22mBorrow from bank: %d?[y/n]\33[0m\n", msgMoney);
-                write(usr.contactsd, outbuf, sizeof(outbuf));
-//                if(!pthread_mutex_trylock(&readClinetLock))
-//                    perror("serviceBorrow mutex LOCK failed!");
-//                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
-                n = read(usr.contactsd, inbuf, sizeof(inbuf));
-                gettimeofday(&cur_tv,&g_tz);
-                if ( -1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
-//                if(!pthread_mutex_unlock(&readClinetLock))
-//                    perror("serviceBorrow mutex UNLOCK failed!");
-
-//                if(!strncmp(inbuf,"y",1)){
-                    if (strstr(inbuf, "y")) {
-                        BankMoney = BankMoney - msgMoney;
-                        usr.store = usr.store - msgMoney;
-                        usr.money = usr.money + msgMoney;
-                        bzero(outbuf, BUFF_LENGTH);
-                        sprintf(outbuf, "Borrow success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", usr.money,usr.store);
-                    } else if (!strcmp(inbuf, "n")) {
-                        sprintf(outbuf, "There,May you can come next time,Bye.");
-                    }
-                    served = 1;
-                    printf("[>>>]Borrow Done.\n");
-                }else{
-                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out!!!\033[0m");
-                    served = 1;
-                }
-            }
-        } else if (strstr(msg, "store")) {
-#endif
         if (strstr(msg, "store")) {
             sscanf(msg, "%*s%s %d", tmp, &msgMoney);
             printf("[serviceStore()]>>> money:%d\n", msgMoney);
             if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
-                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one:\n");
-            } else {
+                sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one,Exit.\n");
+                served = 1;
+            }
+            else if(msgMoney>usr.money){
+                sprintf(outbuf, "You have no such money\nValid amount:[1,%d],Exit.\n",usr.money);
+                served = 1;
+            }
+            else {
                 sprintf(outbuf, "\33[32;22mStore to bank: %d?[y/n]\33[0m\n", msgMoney);
                 write(usr.contactsd, outbuf, sizeof(outbuf));
 //                if(!pthread_mutex_trylock(&readClinetLock))
 //                    perror("serviceBorrow mutex LOCK failed!");
 //                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
                 n = read(usr.contactsd, inbuf, sizeof(inbuf));
-                gettimeofday(&cur_tv,&g_tz);
-                if ( -1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
+                gettimeofday(&cur_tv, &g_tz);
+                if (-1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME)) {
 //                if(!pthread_mutex_unlock(&readClinetLock))
 //                    perror("serviceBorrow mutex UNLOCK failed!");
 
@@ -317,16 +287,16 @@ void *serviceStore(void *c) {
                         usr.store = usr.store + msgMoney;
                         usr.money = usr.money - msgMoney;
                         bzero(outbuf, BUFF_LENGTH);
-                        sprintf(outbuf, "Store success!\nNow your <wallet,store>: <%d,%d> See you :-)\n", usr.money,usr.store);
+                        sprintf(outbuf, "Store success!\nNow your <wallet,bank>: <%d,%d> See you :-)\n", usr.money,
+                                usr.store);
                     } else if (!strcmp(inbuf, "n")) {
                         sprintf(outbuf, "There,May you can come next time,Bye.");
                     }
-                    served = 1;
                     printf("[>>>]Borrow Done.\n");
-                }else{
-                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out.Exit!!!\033[0m");
-                    served = 1;
+                } else {
+                    sprintf(outbuf, "%s", "\033[31;22m!!!Your Time Run Out.Exit!!!\033[0m");
                 }
+                served = 1;
             }
         } else {
             sprintf(outbuf, "Invalid Input,EXIT store. :(");

@@ -2,6 +2,8 @@
 CFLAG= -g -std=c++14 -W -Wall
 
 all:server client
+	@ls -lat
+	@echo `6`
 
 server:chatserverTCP.o
 	g++  --std=c++14 chatserverTCP.o -lpthread -o server
@@ -14,7 +16,6 @@ client:chatclientTCP.o
 
 chatclientTCP.o:chatclientTCP.cpp
 	g++ ${CFLAG} -c chatclientTCP.cpp 
-	ls -lat
 
 clean:
 	rm -rf *o server.* client.*

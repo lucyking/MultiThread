@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     if (strcmp(inbuf, "BUSY")) {
 
         putchar('\n');
-        printf("\t\t**操作说明**\n");
+        printf("\t**操作说明**\n");
         printf("\t\t- [\33[32;22ml\33[0m]               显示所有取号记录\n");
         printf("\t\t- [\33[32;22mp\33[0m]               显示银行中所有在线客户\n");
         printf("\t\t- [\33[32;22mq\33[0m]               退出\n");
@@ -131,12 +131,14 @@ int main(int argc, char **argv) {
         printf("\t\t- [\33[32;22m#reg store <n>\33[0m]  取号 并预约数目为n的借款业务\n");
 
         putchar('\n');
-        printf("\t\t**当前在线**\n");
+        printf("\t**当前在线**\n");
         while (strcmp(inbuf, "END")) {
             printf("\t\t- %s\n", inbuf);
             n = read(sd, inbuf, sizeof(inbuf));
             oc++;
         }
+        putchar('\n');
+        printf("\t点击回车进入操作\n\n");
 
         if (oc == 0) {
             reask:
