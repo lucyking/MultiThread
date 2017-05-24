@@ -120,9 +120,20 @@ int main(int argc, char **argv) {
 
     n = read(sd, inbuf, sizeof(inbuf));
     if (strcmp(inbuf, "BUSY")) {
-        printf("Online Contacts:\n");
+
+        putchar('\n');
+        printf("\t\t**操作说明**\n");
+        printf("\t\t- [\33[32;22ml\33[0m]               显示所有取号记录\n");
+        printf("\t\t- [\33[32;22mp\33[0m]               显示银行中所有在线客户\n");
+        printf("\t\t- [\33[32;22mq\33[0m]               退出\n");
+        printf("\t\t- [\33[32;22m#reg\33[0m]            取号\n");
+        printf("\t\t- [\33[32;22m#reg borrow <n>\33[0m] 取号 并预约数目为n的借款业务\n");
+        printf("\t\t- [\33[32;22m#reg store <n>\33[0m]  取号 并预约数目为n的借款业务\n");
+
+        putchar('\n');
+        printf("\t\t**当前在线**\n");
         while (strcmp(inbuf, "END")) {
-            printf("\t\t - %s\n", inbuf);
+            printf("\t\t- %s\n", inbuf);
             n = read(sd, inbuf, sizeof(inbuf));
             oc++;
         }
@@ -149,8 +160,6 @@ int main(int argc, char **argv) {
                     break;
             }
         }
-
-        printf("\t\t- <[contactname]:[message] to send a private message>\n\t\t- <[message] to send a public message>\n\t\t- <[q] to exit>\n\n\n"); //controlla nuovi arrivi utenti
 
         if (pthread_create(&tid, NULL, manage_reading,NULL) != 0) {
             perror("Thread creation");
