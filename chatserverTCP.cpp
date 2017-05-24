@@ -28,6 +28,9 @@
 #define PROTO_PORT 60000
 #define QLEN 1
 #define SERVERTIME 20 //in seconds
+#define PRINT_V 10
+#define PRINT_H 10
+#define PRINT_H2 25
 
 #define MAX_CONTACTS 3
 
@@ -169,7 +172,7 @@ void *serviceBorrow(void *c) {
                     served = 1;
                     printf("[>>>]Borrow Done.\n");
                 }else{
-                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out!!!\033[0m");
+                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out.Exit!!!\033[0m");
                     served = 1;
                 }
             }
@@ -321,7 +324,7 @@ void *serviceStore(void *c) {
                     served = 1;
                     printf("[>>>]Borrow Done.\n");
                 }else{
-                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out!!!\033[0m");
+                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out.Exit!!!\033[0m");
                     served = 1;
                 }
             }
@@ -466,10 +469,10 @@ void chat(int sd2) {
 //                sysDaemon(sd2,outbuf); //not good to implement monitor daemon
             }
             else if(strstr(inbuf,"checkBorrow")){
-                monitDeque(borrowClientDeque, true, 1, 20, 20);
+                monitDeque(borrowClientDeque, true, 1, PRINT_V, PRINT_H);
             }
             else if(strstr(inbuf,"checkStore")){
-                monitDeque(storeClientDeque, true, 1, 20, 50);
+                monitDeque(storeClientDeque, true, 1, PRINT_V, PRINT_H2);
             }
             else if (!strncmp(inbuf, "#reg", 4)) {
                 /*
@@ -610,14 +613,14 @@ void *manage_connection(void *sdp) {
     sprintf(outbuf, "END");
     write(sd2, outbuf, sizeof(outbuf));
 
-    printf("-(IN THREAD)- sent online contacts\n");
+    printf("[manage_connection]>>> client connected.\n");
 
 
     chat(sd2);
 
     tid[j] = (pthread_t) -1; // free thread array entry
 
-    printf("-(IN THREAD)- close sd2\n");
+    printf("[manage_connection]>>> client exit.\n");
     close(sd2);
     contacts--;
     return &thread_retval;
@@ -862,8 +865,8 @@ void *sysDeamon(void *deque) {
 
 //        monitDeque(*(serverList *)deque, 20, 20); // monitor input var
 
-        monitDeque(borrowClientDeque, true,0, 20, 20); //monitor global var
-        monitDeque(storeClientDeque, false,1, 20, 50);
+        monitDeque(borrowClientDeque, true,0, PRINT_V, PRINT_H); //monitor global var
+        monitDeque(storeClientDeque, false,1, PRINT_V, PRINT_H2);
     }
 }
 
