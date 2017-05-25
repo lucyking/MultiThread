@@ -487,7 +487,7 @@ void chat(int sd2) {
                 write(sd2, outbuf, sizeof(outbuf));
             } else if (!strcmp(inbuf, "l")) {
                 /** print client Queue Info **/
-                sprintf(outbuf, "%s\n", "<ID>\t<Reg Time>\t<User>");
+                sprintf(outbuf, "%s\n", "<ID>\t<TimeStamp>\t<User>");
                 registerInfo tmp;// = clientDict[sd2].regInfo;
                 registerInfo sum;
                 for (auto it = clientDict.begin(); it != clientDict.end(); it++)
