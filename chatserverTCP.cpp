@@ -37,8 +37,9 @@
 #define FLASHRATE 0.5
 
 using namespace std;
-#define BANKINITSTORE UINT32_MAX
-int BankMoney = BANKINITSTORE;
+#define BANK_INIT_STORE UINT32_MAX
+#define CLIENT_INIT_MONEY 600
+unsigned int BankMoney = BANK_INIT_STORE / 2;
 int clientSeq = 1;
 int contacts = 0;
 int active_socket[MAXTHREADS];
@@ -57,12 +58,12 @@ char uptimeInfo[15];
 unsigned long uptime;
 
 typedef map<int, pthread_t> serverTid;
-serverTid sTid,distTid;
+serverTid sTid, distTid;
 pthread_t tid[MAXTHREADS];
 pthread_mutex_t readClinetLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t queueBorrow = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t queueStore= PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t initUserLock= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queueStore = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t initUserLock = PTHREAD_MUTEX_INITIALIZER;
 int t_mutex;
 
 typedef set<string> setOnlineClient;
@@ -90,31 +91,44 @@ typedef map<int, contact> clientMap;
 clientMap clientDict;
 
 
-typedef  deque<contact> serverList;
-serverList borrowClientDeque,storeClientDeque;
+typedef deque<contact> serverList;
+serverList borrowClientDeque, storeClientDeque;
+
+contact *checkClientDict(clientMap d, char *name);
+
+void syncClientDict(clientMap &d, contact c);
+
+typedef map<char *, contact> moneyMap;
+moneyMap moneyDict;
+
+pair<int, int> checkMoneyDict(moneyMap d, char *name);
 
 unsigned long checkDeque(serverList cliList);
+
 bool inDeque(serverList cliList, contact usr);
 
 bool startTick(serverList &deque, contact &contact);
+
 bool setRegTick(serverList &deque, contact contact);
 
-int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int showLine_V, int showLine_H);
+int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate, int showLine_V, int showLine_H);
 
-int getListHeadID(serverList cliList){
+int getListHeadID(serverList cliList) {
     return cliList.front().contactsd;
 }
 
 void prGreen();
+
 void prNormal();
+
 void cleanScreen();
 
 void *sysDeamon(void *deque);
 
 void *serviceBorrow(void *c) {
 
-    if(monitor_flag==1) {
-        monitor_flag =0; //just create one daemon. mmm
+    if (monitor_flag == 1) {
+        monitor_flag = 0; //just create one daemon. mmm
         pthread_t monitor_t = (pthread_t) -1;
         pthread_create(&monitor_t, NULL, sysDeamon, &borrowClientDeque);
     }
@@ -128,12 +142,13 @@ void *serviceBorrow(void *c) {
     int served = 0;
     char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
+    bzero(msg, STRLEN);
     strcpy(msg, clientDict[id].inMsg);
     struct timeval cur_tv;
 
     // start usr time tick
-    if(!startTick(borrowClientDeque,clientDict[id])){
-       perror("[>>>ERR]:StartTick() Failed\n");
+    if (!startTick(borrowClientDeque, clientDict[id])) {
+        perror("[>>>ERR]:StartTick() Failed\n");
     }
 //    gettimeofday(&(usr.startTv),&g_tz);
 //    checkDeque(borrowClientDeque);
@@ -155,26 +170,47 @@ void *serviceBorrow(void *c) {
 //                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
                 n = read(clientDict[id].contactsd, inbuf, sizeof(inbuf));
 
-                gettimeofday(&cur_tv,&g_tz);
+                gettimeofday(&cur_tv, &g_tz);
 
-                if ( -1 != n && ((cur_tv.tv_sec - clientDict[id].startTv.tv_sec) < SERVERTIME )) {
+                if (-1 != n && ((cur_tv.tv_sec - clientDict[id].startTv.tv_sec) < SERVERTIME)) {
 //                if(!pthread_mutex_unlock(&readClinetLock))
 //                    perror("serviceBorrow mutex UNLOCK failed!");
 
 //                if(!strncmp(inbuf,"y",1)){
                     if (strstr(inbuf, "y")) {
+
+                        // [!]useless
+                        // due to clientDict<> make sure each mlock is independent.
+                        pthread_mutex_lock(&clientDict[id].mlock);
+
+                        // if old account exist, clone it.
+//                        contact* you_old = checkClientDict(clientDict,clientDict[id].usrname);
+                        pair<int, int> you_old = checkMoneyDict(moneyDict, clientDict[id].usrname);
+                        if (make_pair(-1, -1) != you_old) {
+                            clientDict[id].money = you_old.first;
+                            clientDict[id].store = you_old.second;
+                        }
+
                         BankMoney = BankMoney - msgMoney;
-                        clientDict[id].store -=  msgMoney;
+                        clientDict[id].store -= msgMoney;
                         clientDict[id].money = clientDict[id].money + msgMoney;
+
+                        pthread_mutex_unlock(&clientDict[id].mlock);
+
+                        moneyDict[clientDict[id].usrname] = clientDict[id];
+                        syncClientDict(clientDict,clientDict[id]);
+
                         bzero(outbuf, BUFF_LENGTH);
-                        sprintf(outbuf, "Borrow success!\nNow your <wallet,bank>: <%d,%d> See you :-)\n", clientDict[id].money, clientDict[id].store);
+                        sprintf(outbuf, "Borrow success!\nNow your <wallet,bank>: <%d,%d> See you :-)\n",
+                                clientDict[id].money, clientDict[id].store);
+
                     } else if (!strcmp(inbuf, "n")) {
                         sprintf(outbuf, "There,May you can come next time,Bye.");
                     }
                     served = 1;
                     printf("[>>>]Borrow Done.\n");
-                }else{
-                    sprintf(outbuf,"%s","\033[31;22m!!!Your Time Run Out.Exit!!!\033[0m");
+                } else {
+                    sprintf(outbuf, "%s", "\033[31;22m!!!Your Time Run Out.Exit!!!\033[0m");
                     served = 1;
                 }
             }
@@ -240,17 +276,19 @@ void *serviceStore(void *c) {
 
     pthread_mutex_lock(&queueStore);
 
-    contact usr = *(contact *) c;
+//    contact usr = *(contact *) c;
+    int id = (*(contact *) c).contactsd;
     int msgMoney;
     ssize_t n;
     int served = 0;
     char inbuf[BUFF_LENGTH], outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
-    strcpy(msg, usr.inMsg);
+    bzero(msg, STRLEN);
+    strcpy(msg, clientDict[id].inMsg);
     struct timeval cur_tv;
 
     // start usr time tick
-    if (!startTick(storeClientDeque, usr)) {
+    if (!startTick(storeClientDeque, clientDict[id])) {
         perror("[>>>ERR]:StartTick() Failed\n");
     }
 //    gettimeofday(&(usr.startTv),&g_tz);
@@ -265,31 +303,45 @@ void *serviceStore(void *c) {
             if (msgMoney <= 0 || msgMoney > UINT16_MAX) {
                 sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one,Exit.\n");
                 served = 1;
-            }
-            else if(msgMoney>usr.money){
-                sprintf(outbuf, "You have no such money\nValid amount:[1,%d],Exit.\n",usr.money);
+            } else if (msgMoney > clientDict[id].money) {
+                sprintf(outbuf, "You have no such money\nValid amount:[1,%d],Exit.\n", clientDict[id].money);
                 served = 1;
-            }
-            else {
+            } else {
                 sprintf(outbuf, "\33[32;22mStore to bank: %d?[y/n]\33[0m\n", msgMoney);
-                write(usr.contactsd, outbuf, sizeof(outbuf));
+                write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
 //                if(!pthread_mutex_trylock(&readClinetLock))
 //                    perror("serviceBorrow mutex LOCK failed!");
 //                if ( -1 != read(usr.contactsd, inbuf, sizeof(inbuf)) && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME )) {
-                n = read(usr.contactsd, inbuf, sizeof(inbuf));
+                n = read(clientDict[id].contactsd, inbuf, sizeof(inbuf));
                 gettimeofday(&cur_tv, &g_tz);
-                if (-1 != n && ((cur_tv.tv_sec - usr.startTv.tv_sec) < SERVERTIME)) {
+                if (-1 != n && ((cur_tv.tv_sec - clientDict[id].startTv.tv_sec) < SERVERTIME)) {
 //                if(!pthread_mutex_unlock(&readClinetLock))
 //                    perror("serviceBorrow mutex UNLOCK failed!");
 
 //                if(!strncmp(inbuf,"y",1)){
+
                     if (strstr(inbuf, "y")) {
+
+                        pthread_mutex_lock(&clientDict[id].mlock);
+
+                        pair<int, int> you_old = checkMoneyDict(moneyDict, clientDict[id].usrname);
+                        if (make_pair(-1, -1) != you_old) {
+                            clientDict[id].money = you_old.first;
+                            clientDict[id].store = you_old.second;
+                        }
                         BankMoney = BankMoney + msgMoney;
-                        usr.store = usr.store + msgMoney;
-                        usr.money = usr.money - msgMoney;
+                        clientDict[id].store = clientDict[id].store + msgMoney;
+                        clientDict[id].money = clientDict[id].money - msgMoney;
+
+                        pthread_mutex_unlock(&clientDict[id].mlock);
+
+                        moneyDict[clientDict[id].usrname] = clientDict[id];
+                        syncClientDict(clientDict,clientDict[id]);
+
                         bzero(outbuf, BUFF_LENGTH);
-                        sprintf(outbuf, "Store success!\nNow your <wallet,bank>: <%d,%d> See you :-)\n", usr.money,
-                                usr.store);
+                        sprintf(outbuf, "Store success!\nNow your <wallet,bank>: <%d,%d> See you :-)\n",
+                                clientDict[id].money,
+                                clientDict[id].store);
                     } else if (!strcmp(inbuf, "n")) {
                         sprintf(outbuf, "There,May you can come next time,Bye.");
                     }
@@ -306,7 +358,7 @@ void *serviceStore(void *c) {
     }
 //    printf("[>>>]SERVED==1 serviceBorrow() exit.\n\n");
     storeClientDeque.pop_front(); // Serve done: pop the front Client in Queue.
-    write(usr.contactsd, outbuf, sizeof(outbuf));
+    write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
 
     pthread_mutex_unlock(&queueStore);
 
@@ -316,7 +368,7 @@ void *serviceStore(void *c) {
 
 void *distServer(void *p) {
     printf("[>>>]Here is *DistServer(void *p)\n");
-    int id =  (*(contact *) p).contactsd;
+    int id = (*(contact *) p).contactsd;
     int curServerID;
     char outbuf[BUFF_LENGTH];
     char msg[STRLEN], tmp[STRLEN];
@@ -326,8 +378,7 @@ void *distServer(void *p) {
     int done = 0;
 
     while (!done) {
-        printf("clientDict[id].inMsg >>>  %s\n",clientDict[id].inMsg);
-//        if (strstr((*(contact *)p).inMsg, " borrow ")) {
+        printf("clientDict[id].inMsg >>>  %s\n", clientDict[id].inMsg);
         if (strstr(clientDict[id].inMsg, " borrow ")) {
 
             //only push each #ID once time
@@ -344,16 +395,16 @@ void *distServer(void *p) {
                 }
                 pthread_join(distTid[id], 0);
                 done = 1;
-            }else {
-                sprintf(outbuf,"%s","Wait previous client finish\n");
+            } else {
+                sprintf(outbuf, "%s", "Wait previous client finish\n");
 //                printf("[>>>]Wait previous client finish - -");
-                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
+                write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
 
                 pthread_mutex_lock(&queueBorrow); //wait previous unlock
 
-                sprintf(outbuf,"%s","You time\n");
+                sprintf(outbuf, "%s", "You time\n");
 //                printf("[>>>]Wait previous client finish - -");
-                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
+                write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
 
                 pthread_mutex_unlock(&queueBorrow);
                 continue;
@@ -375,16 +426,16 @@ void *distServer(void *p) {
                 }
                 pthread_join(distTid[id], 0);
                 done = 1;
-            }else {
-                sprintf(outbuf,"%s","Wait previous client finish\n");
+            } else {
+                sprintf(outbuf, "%s", "Wait previous client finish\n");
 //                printf("[>>>]Wait previous client finish - -");
-                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
+                write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
 
                 pthread_mutex_lock(&queueStore); //wait previous unlock
 
-                sprintf(outbuf,"%s","You time\n");
+                sprintf(outbuf, "%s", "You time\n");
 //                printf("[>>>]Wait previous client finish - -");
-                write(clientDict[id].contactsd,outbuf,sizeof(outbuf));
+                write(clientDict[id].contactsd, outbuf, sizeof(outbuf));
 
                 pthread_mutex_unlock(&queueStore);
                 continue;
@@ -393,6 +444,8 @@ void *distServer(void *p) {
 
         }
     }
+
+    pthread_exit(0);
 
 
 }
@@ -420,11 +473,11 @@ void chat(int sd2) {
         }
         */
         n = read(sd2, inbuf, sizeof(inbuf));
-        printf("inbuf >>>  %s\n",inbuf);
-        printf("clientDict[id].inMsg before strcpy>>>  %s\n",clientDict[sd2].inMsg);
-        bzero(clientDict[sd2].inMsg,STRLEN);
-        strcpy(clientDict[sd2].inMsg,inbuf);
-        printf("clientDict[id].inMsg after strcpy>>>  %s\n",clientDict[sd2].inMsg);
+        printf("inbuf >>>  %s\n", inbuf);
+        printf("clientDict[id].inMsg before strcpy>>>  %s\n", clientDict[sd2].inMsg);
+        bzero(clientDict[sd2].inMsg, STRLEN);
+        strcpy(clientDict[sd2].inMsg, inbuf);
+        printf("clientDict[id].inMsg after strcpy>>>  %s\n", clientDict[sd2].inMsg);
 //        pthread_mutex_lock(&readClinetLock);
 //        cout<<"read inbuf size: "<<n<<endl;
 
@@ -435,17 +488,14 @@ void chat(int sd2) {
             served = 1;
         } else {
             //get clientSeq #ID
-            if(!strncmp(inbuf,"monitor",7)){
+            if (!strncmp(inbuf, "monitor", 7)) {
                 served = 1;
 //                sysDaemon(sd2,outbuf); //not good to implement monitor daemon
-            }
-            else if(strstr(inbuf,"checkBorrow")){
+            } else if (strstr(inbuf, "checkBorrow")) {
                 monitDeque(borrowClientDeque, true, 1, PRINT_V, PRINT_H);
-            }
-            else if(strstr(inbuf,"checkStore")){
+            } else if (strstr(inbuf, "checkStore")) {
                 monitDeque(storeClientDeque, true, 1, PRINT_V, PRINT_H2);
-            }
-            else if (!strncmp(inbuf, "#reg", 4)) {
+            } else if (!strncmp(inbuf, "#reg", 4)) {
                 /*
                 for (i = 0; onlinecontacts[i].contactsd != sd2; i++);
                 sprintf(outbuf, "Hi <%s>, your #ID is [%d]", onlinecontacts[i].contactname, clientSeq);
@@ -460,15 +510,15 @@ void chat(int sd2) {
                 write(sd2, outbuf, sizeof(outbuf));
 
 
-                if(strstr(inbuf," borrow ") || strstr(inbuf," store")) {
+                if (strstr(inbuf, " borrow ") || strstr(inbuf, " store")) {
 //                    pthread_mutex_unlock(&readClinetLock);
 //                    if (pthread_create(&sTid[clientDict[sd2].id], NULL, serviceBorrow, &clientDict[sd2]) != 0) {
                     if (pthread_create(&sTid[clientDict[sd2].id], NULL, distServer, &clientDict[sd2]) != 0) {
                         perror("Thread creation Failed!");
-                        sTid[clientDict[sd2].id]= (pthread_t) -1; // to be sure we don't have unknown values... cast
+                        sTid[clientDict[sd2].id] = (pthread_t) -1; // to be sure we don't have unknown values... cast
                         continue;
                     }
-                    pthread_join(sTid[clientDict[sd2].id],0);
+                    pthread_join(sTid[clientDict[sd2].id], 0);
                     printf("pthread_join(sTid[clientDict[sd2].id],0);\n");
                 }
 
@@ -533,7 +583,7 @@ void chat(int sd2) {
                 printf("\nMessage [%s] is for [%s]\n\n", message, clientname);
 
             } else {
-                sprintf(outbuf, "In BANK thread you input>>> %s\n",inbuf);
+                sprintf(outbuf, "In BANK thread you input>>> %s\n", inbuf);
                 write(sd2, outbuf, sizeof(outbuf));
                 /*
                 for (i = 0; onlinecontacts[i].contactsd != sd2; i++);
@@ -575,12 +625,12 @@ void *manage_connection(void *sdp) {
     }
 
     for (auto k = clientDict.begin(); k != clientDict.end(); k++) {
-            sprintf(outbuf, "[%d]: [%s]: [%ld]", k->first, k->second.usrname, k->second.regTv.tv_sec);
+        sprintf(outbuf, "[%d]: [%s]: [%ld]", k->first, k->second.usrname, k->second.regTv.tv_sec);
         //printf("[%s]\n\n", buffer);
         write(sd2, outbuf, sizeof(outbuf));
     }
 
-    bzero(outbuf,STRLEN);
+    bzero(outbuf, STRLEN);
     sprintf(outbuf, "END");
     write(sd2, outbuf, sizeof(outbuf));
 
@@ -673,8 +723,6 @@ int main(int argc, char **argv) {
     printf("Server in the service loop\n");
 
 
-
-
     while (!endloop) {
 
         alen = sizeof(cad);
@@ -713,10 +761,21 @@ int main(int argc, char **argv) {
 
             printf("\nClient name is:  [%s]\n\n", clientname);
 
-            strcpy(clientDict[sd2].usrname,clientname);
-            string tmp = clientname;
-            clientDict[sd2].contactsd = sd2;
-            clientDict[sd2].money = 600;
+            pair<int, int> re = checkMoneyDict(moneyDict, clientname);
+
+
+            if (make_pair(-1, -1) != re) {
+                clientDict[sd2].money = re.first;
+                clientDict[sd2].store = re.second;
+                clientDict[sd2].contactsd = sd2;
+                strcpy(clientDict[sd2].usrname, clientname);
+            } else {
+                clientDict[sd2].money = CLIENT_INIT_MONEY;
+                clientDict[sd2].store = 0;
+                clientDict[sd2].contactsd = sd2;
+                strcpy(clientDict[sd2].usrname, clientname);
+            }
+
             gettimeofday(&clientDict[sd2].regTv, &g_tz); // init contact 's register time
 
             //look for the first empty slot in thread array
@@ -759,61 +818,94 @@ int main(int argc, char **argv) {
 
 unsigned long checkDeque(serverList cliList) {
 //    contact usr;
-    unsigned long t=0;
+    unsigned long t = 0;
     int firstFlag = 1;
     struct tm *p;
-    cout<<"-------checkDeque---------"<<endl;
-    for(auto it = cliList.begin();it!=cliList.end();it++){
+    cout << "-------checkDeque---------" << endl;
+    for (auto it = cliList.begin(); it != cliList.end(); it++) {
 //        p = localtime(&(it->startTv.tv_sec));
 
-        if(firstFlag==1)  // only render the 1st line, which is in servering
+        if (firstFlag == 1)  // only render the 1st line, which is in servering
             prGreen();
 
         p = localtime(&it->startTv.tv_sec);
         printf("%d/%d/%d %d:%d:%d.%ld  ",
-               1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
+               1900 + p->tm_year, 1 + p->tm_mon, p->tm_mday,
                p->tm_hour, p->tm_min, p->tm_sec, it->startTv.tv_usec);
         printf(" %d %s %ld\n", it->id, it->usrname, it->regInfo[it->id].first);
-        t = t+it->regInfo[it->id].first;
+        t = t + it->regInfo[it->id].first;
 
-        if(firstFlag==1) {
+        if (firstFlag == 1) {
             firstFlag = 0;
             prNormal();
         }
     }
-    cout<<"*******checkDeque*********"<<endl;
+    cout << "*******checkDeque*********" << endl;
     return t;
 }
 
 
-bool inDeque(serverList cliList, contact usr){
-    for(auto it = cliList.begin();it!=cliList.end();it++){
-        if(it->id==usr.id)
+pair<int, int> checkMoneyDict(moneyMap d, char *name) {
+
+    for (auto k = moneyDict.begin(); k != moneyDict.end(); k++) {
+        if (!strcmp(k->first, name)) {
+            return make_pair(k->second.money, k->second.store);
+        }
+    }
+
+    return make_pair(-1, -1);
+};
+
+
+
+void syncClientDict(clientMap &d, contact c){
+    for(auto k = d.begin();k!=d.end();k++){
+        if(!strcmp(k->second.usrname,c.usrname)){
+            k->second.money = c.money;
+            k->second.store = c.store;
+        }
+    }
+    return;
+}
+
+contact *checkClientDict(clientMap d, char *name) {
+    for (auto k = d.begin(); k != d.end(); k++) {
+        if (!strcmp(k->second.usrname, name)) {
+            return &(k->second);
+        }
+    }
+    return NULL;
+
+}
+
+bool inDeque(serverList cliList, contact usr) {
+    for (auto it = cliList.begin(); it != cliList.end(); it++) {
+        if (it->id == usr.id)
             return true;
     }
     return false;
 }
 
-bool startTick(serverList &deque, contact &usr){
-    for(auto it = deque.begin();it!=deque.end();it++){
+bool startTick(serverList &deque, contact &usr) {
+    for (auto it = deque.begin(); it != deque.end(); it++) {
 //       if(it->id==usr.id) {
-       if(it->contactsd==usr.contactsd) {
+        if (it->contactsd == usr.contactsd) {
 //           cout<<"[in startTick before>>]"<<endl;
 //           checkDeque(deque);
-           gettimeofday(&it->startTv, &g_tz);
-           gettimeofday(&usr.startTv, &g_tz);
+            gettimeofday(&it->startTv, &g_tz);
+            gettimeofday(&usr.startTv, &g_tz);
 //           cout<<"[in startTick end>>]"<<endl;
 //           checkDeque(deque);
-           return true;
-       }
+            return true;
+        }
     }
     return false;
 
 }
 
-bool setRegTick(serverList &deque, contact usr){
-    for(auto it = deque.begin();it!=deque.end();it++){
-        if(it->id==usr.id) {
+bool setRegTick(serverList &deque, contact usr) {
+    for (auto it = deque.begin(); it != deque.end(); it++) {
+        if (it->id == usr.id) {
 //            cout<<"[in startRegTick before>>]"<<endl;
 //            checkDeque(deque);
             gettimeofday(&it->startTv, &g_tz);
@@ -827,8 +919,6 @@ bool setRegTick(serverList &deque, contact usr){
 }
 
 
-
-
 void *sysDeamon(void *deque) {
     int flag = 1;
 //    serverList list = *(serverList *)deque;
@@ -836,58 +926,57 @@ void *sysDeamon(void *deque) {
 
 //        monitDeque(*(serverList *)deque, 20, 20); // monitor input var
 
-        monitDeque(borrowClientDeque, true,0, PRINT_V, PRINT_H); //monitor global var
-        monitDeque(storeClientDeque, false,1, PRINT_V, PRINT_H2);
+        monitDeque(borrowClientDeque, true, 0, PRINT_V, PRINT_H); //monitor global var
+        monitDeque(storeClientDeque, false, 1, PRINT_V, PRINT_H2);
     }
 }
 
-int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int showLine_V, int showLine_H) {
+int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate, int showLine_V, int showLine_H) {
     int firstFlag = 1;
-    struct tm *p,*cur;
+    struct tm *p, *cur;
     struct timeval cur_tv;
     __time_t remin_sec = 0;
 
-    gettimeofday(&cur_tv,&g_tz);
+    gettimeofday(&cur_tv, &g_tz);
 
 
-    if(cleanScreen){
+    if (cleanScreen) {
         printf("\033[2J");
-        printf("\033[%d;%dH",showLine_H++,showLine_V);
-        printf("\t\t[当前库存:%u (初始:%u)]\n",BankMoney,BANKINITSTORE);
+        printf("\033[%d;%dH", showLine_H++, showLine_V);
+        printf("\t\t[当前库存:%u (初始:%u)]\n", BankMoney, BANK_INIT_STORE / 2);
     }
 
 //    printf("\033[%d;%dH",showLine_H,showLine_V++);
 
-    for(auto it = deque.begin();it!=deque.end();it++){
+    for (auto it = deque.begin(); it != deque.end(); it++) {
 
-        printf("\033[%d;%dH",showLine_H++,showLine_V);
+        printf("\033[%d;%dH", showLine_H++, showLine_V);
 
-        if(firstFlag==1)
+        if (firstFlag == 1)
             printf("\33[32;22m");
-        if(it==deque.begin()) {
+        if (it == deque.begin()) {
             // client on server
-            remin_sec = it->time + it->startTv.tv_sec - cur_tv.tv_sec ;
+            remin_sec = it->time + it->startTv.tv_sec - cur_tv.tv_sec;
             p = localtime(&it->startTv.tv_sec);
             printf("%d/%d/%d %d:%d:%02d\t",
-                   1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
+                   1900 + p->tm_year, 1 + p->tm_mon, p->tm_mday,
                    p->tm_hour, p->tm_min, p->tm_sec);
 
 //            printf(" %d %ld % -5s\t", it->id,it->regInfo[it->id].first,it->usrname);
-            printf(" %d % -3s\t", it->id,it->usrname);
-            printf("elapsing: %ld s\t",remin_sec);
+            printf(" %d % -3s\t", it->id, it->usrname);
+            printf("elapsing: %ld s\t", remin_sec);
             printf("\33[31;22min server\n\33[0m");
-        }
-        else{
+        } else {
             // client in wait queue
             remin_sec = it->time; // + it->startTv.tv_sec - cur_tv.tv_sec ;
             p = localtime(&it->regTv.tv_sec);
             printf("%d/%d/%d %d:%d:%02d\t",
-                   1900+p->tm_year, 1+p->tm_mon, p->tm_mday,
+                   1900 + p->tm_year, 1 + p->tm_mon, p->tm_mday,
                    p->tm_hour, p->tm_min, p->tm_sec);
 
 //            printf(" %d %ld % -5s\t", it->id,it->regInfo[it->id].first,it->usrname);
-            printf(" %d % -3s\t", it->id,it->usrname);
-            printf("remain:   %ld s\t",remin_sec);
+            printf(" %d % -3s\t", it->id, it->usrname);
+            printf("remain:   %ld s\t", remin_sec);
             printf("Wait\n");
         }
 
@@ -895,8 +984,8 @@ int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int sh
 
 //        reminer_sec = it->time
 //        printf("%d",)
-        if(firstFlag==1){
-            firstFlag=0;
+        if (firstFlag == 1) {
+            firstFlag = 0;
             printf("\33[0m");
         }
 
@@ -906,15 +995,15 @@ int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int sh
 
 }
 
-void prGreen(){
+void prGreen() {
     printf("\033[32;22m");
 }
 
-void prNormal(){
+void prNormal() {
     printf("\033[0m");
 }
 
-void cleanScreen(){
+void cleanScreen() {
     sleep(0.5);
     printf("\03300H");
 }
