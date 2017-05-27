@@ -129,6 +129,7 @@ int main(int argc, char **argv) {
         printf("\t\t- [\33[32;22m#reg\33[0m]            取号\n");
         printf("\t\t- [\33[32;22m#reg borrow <n>\33[0m] 取号 并预约数目为n的借款业务\n");
         printf("\t\t- [\33[32;22m#reg store <n>\33[0m]  取号 并预约数目为n的借款业务\n");
+        printf("\t\t- <n>~[1,\33[32;22m%u\33[0m]     存取款数目n的有效范围 \n",UINT16_MAX);
 
         putchar('\n');
         printf("\t**当前在线**\n");

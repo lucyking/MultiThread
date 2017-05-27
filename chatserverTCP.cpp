@@ -37,7 +37,8 @@
 #define FLASHRATE 0.5
 
 using namespace std;
-int BankMoney = INT16_MAX;
+#define BANKINITSTORE UINT32_MAX
+int BankMoney = BANKINITSTORE;
 int clientSeq = 1;
 int contacts = 0;
 int active_socket[MAXTHREADS];
@@ -143,7 +144,7 @@ void *serviceBorrow(void *c) {
         if (strstr(msg, "borrow")) {
             sscanf(msg, "%*s%s %d", tmp, &msgMoney);
             printf("[serviceBorrow()]>>> money:%d\n", msgMoney);
-            if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
+            if (msgMoney <= 0 || msgMoney > UINT16_MAX) {
                 sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one,Exit.\n");
                 served = 1;
             } else {
@@ -261,7 +262,7 @@ void *serviceStore(void *c) {
         if (strstr(msg, "store")) {
             sscanf(msg, "%*s%s %d", tmp, &msgMoney);
             printf("[serviceStore()]>>> money:%d\n", msgMoney);
-            if (msgMoney < 0 || msgMoney > UINTMAX_MAX) {
+            if (msgMoney <= 0 || msgMoney > UINT16_MAX) {
                 sprintf(outbuf, "%s", "Invalid Money quantity\nPlease input valid one,Exit.\n");
                 served = 1;
             }
@@ -852,7 +853,7 @@ int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int sh
     if(cleanScreen){
         printf("\033[2J");
         printf("\033[%d;%dH",showLine_H++,showLine_V);
-        printf("\t\t[当前库存: %u (初始: %d)]\n",BankMoney,INT16_MAX);
+        printf("\t\t[当前库存:%u (初始:%u)]\n",BankMoney,BANKINITSTORE);
     }
 
 //    printf("\033[%d;%dH",showLine_H,showLine_V++);
