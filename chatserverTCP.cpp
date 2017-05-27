@@ -37,7 +37,7 @@
 #define FLASHRATE 0.5
 
 using namespace std;
-int BankMoney = UINTMAX_MAX;
+int BankMoney = INT16_MAX;
 int clientSeq = 1;
 int contacts = 0;
 int active_socket[MAXTHREADS];
@@ -849,8 +849,11 @@ int monitDeque(serverList deque, bool cleanScreen, unsigned int flashRate,int sh
     gettimeofday(&cur_tv,&g_tz);
 
 
-    if(cleanScreen)
+    if(cleanScreen){
         printf("\033[2J");
+        printf("\033[%d;%dH",showLine_H++,showLine_V);
+        printf("\t\t[当前库存: %u (初始: %d)]\n",BankMoney,INT16_MAX);
+    }
 
 //    printf("\033[%d;%dH",showLine_H,showLine_V++);
 
