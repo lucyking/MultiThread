@@ -1,0 +1,22 @@
+#!/usr/bin/expect 
+set username [lindex $argv 0]
+set sleeptime [lindex $argv 1]
+set service [lindex $argv 2]
+set amount [lindex $argv 3]
+
+spawn client $username 127.0.0.1
+send "\r\r\r"
+
+send "#reg $service $amount \r"
+
+expect {
+	"\[y/n\]" {
+		sleep $sleeptime
+		send "y\r"
+	}
+
+}
+
+send "q\r"
+
+interact

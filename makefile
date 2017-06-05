@@ -4,6 +4,7 @@ CFLAG= -g -std=c++14 -W -Wall
 all:server client
 	@ls -lat
 	@echo `6`
+	cp client /usr/local/bin/
 
 server:chatserverTCP.o
 	g++  --std=c++14 chatserverTCP.o -lpthread -o server
