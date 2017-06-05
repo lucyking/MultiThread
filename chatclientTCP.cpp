@@ -108,7 +108,7 @@ int main(int argc, char **argv) {
     sd = socket(PF_INET, SOCK_STREAM, 0);
 
     printf("Connecting to [%d]:[%d]...\n\n", sad.sin_addr.s_addr, sad.sin_port);
-    sleep(0.5);
+//    sleep(0.5);
     connect(sd, (struct sockaddr *) &sad, sizeof(sad));
     printf("Connected to Server: [%d]:[%d]\n", sad.sin_addr.s_addr, sad.sin_port);
 
@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
     write(sd, outbuf, sizeof(outbuf));
 
     printf("waiting for Server status...\n\n");
-    sleep(0.5);
+//    sleep(0.5);
 
     n = read(sd, inbuf, sizeof(inbuf));
     if (strcmp(inbuf, "BUSY")) {
@@ -191,10 +191,10 @@ int main(int argc, char **argv) {
     out:
     printf("Closing connection...\n");
 
-    sleep(0.5);
+//    sleep(0.5);
 
     printf("Bye!\n");
-    sleep(0.5);
+//    sleep(0.5);
 
     close(sd);
     printf("\n\nClient finished\n\n");

@@ -21,13 +21,13 @@
 #include <iostream>
 #include <queue>
 
-#define MAXTHREADS 3
+#define MAXTHREADS 64
 #define KILO 1024
 #define BUFF_LENGTH 1024
 #define STRLEN  256
 #define PROTO_PORT 60000
 #define QLEN 1
-#define SERVERTIME 20 //in seconds
+#define SERVERTIME 120 //in seconds
 #define PRINT_V 10
 #define PRINT_H 10
 #define PRINT_H2 25
@@ -37,7 +37,8 @@
 #define FLASHRATE 0.5
 
 using namespace std;
-#define BANK_INIT_STORE UINT32_MAX
+//#define BANK_INIT_STORE UINT32_MAX
+#define BANK_INIT_STORE 2100000000
 #define CLIENT_INIT_MONEY 600
 unsigned int BankMoney = BANK_INIT_STORE / 2;
 int clientSeq = 1;
